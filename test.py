@@ -101,7 +101,7 @@ def ccsd_energy_correlation(t1, t2, f, g, o, v):
     # 	  1.0000 f(i,i)
     # energy = 1.0 * einsum('ii', f[o, o])
 
-    #	  1.0000 f(i,a)*t1(a,i)
+    # 	  1.0000 f(i,a)*t1(a,i)
     # energy += 1.0 * einsum('ia,ai', f[o, v], t1)
 
     # #	 -0.5000 <j,i||j,i>
