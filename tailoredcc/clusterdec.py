@@ -1,6 +1,7 @@
 # Proprietary and Confidential
 # Covestro Deutschland AG, 2023
 
+
 def _append0(detstring, norb):
     """Append zeros to a determinant string.
     The strings from pyscf are normal binary strings,
