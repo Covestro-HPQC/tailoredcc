@@ -7,7 +7,11 @@ from openfermionpyscf._run_pyscf import compute_integrals
 from openfermion.chem.molecular_data import spinorb_from_spatial
 
 from .ccsd_equations import ccsd_energy, singles_residual, doubles_residual
-from .amplitudes import extract_ci_singles_doubles_amplitudes_spinorb, assert_spinorb_antisymmetric
+from .amplitudes import (
+    ci_to_cluster_amplitudes,
+    extract_ci_singles_doubles_amplitudes_spinorb,
+    assert_spinorb_antisymmetric,
+)
 
 
 def solve_tccsd(
@@ -107,11 +111,9 @@ def tccsd_from_ci(mc):
 
 
 def tccsd(scfres, c_ia, c_ijab, occslice, virtslice):
-    assert_spinorb_antisymmetric(c_ijab)
     mol = scfres.mol
     # 1. convert to T amplitudes
-    t1 = c_ia.copy()
-    t2 = c_ijab - np.einsum("ia,jb->ijab", t1, t1) + np.einsum("ib,ja->ijab", t1, t1)
+    t1, t2 = ci_to_cluster_amplitudes(c_ia, c_ijab)
 
     assert_spinorb_antisymmetric(t2)
     # 2. build CCSD prerequisites

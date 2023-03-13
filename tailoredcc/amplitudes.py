@@ -62,17 +62,17 @@ def remove_index_restriction_doubles(cid_aa, nocc, nvirt):
     assert cid_aa.ndim == 1
     assert cid_aa.size == nocc * (nocc - 1) // 2 * nvirt * (nvirt - 1) // 2
     cid_aa_full = np.zeros((nocc, nocc, nvirt, nvirt))
-    detidx = 0
+    idx = 0
     for j in range(nocc):
         for i in range(j):
             for b in range(nvirt):
                 for a in range(b):
-                    coeff = cid_aa[detidx]
+                    coeff = cid_aa[idx]
                     cid_aa_full[i, j, a, b] = coeff
                     cid_aa_full[j, i, a, b] = -1.0 * coeff
                     cid_aa_full[i, j, b, a] = -1.0 * coeff
                     cid_aa_full[j, i, b, a] = coeff
-                    detidx += 1
+                    idx += 1
     return cid_aa_full
 
 
@@ -87,14 +87,20 @@ def amplitudes_to_spinorb(c0, cis_a, cis_b, cid_aa, cid_ab, cid_bb):
     c_ia = spatial2spin((cis_a, cis_b))
     c_ijab = spatial2spin((cid_aa_full, cid_ab, cid_bb_full))
 
-    np.testing.assert_allclose(c_ijab, -1.0 * c_ijab.transpose(0, 1, 3, 2))
-    np.testing.assert_allclose(c_ijab, -1.0 * c_ijab.transpose(1, 0, 2, 3))
-    np.testing.assert_allclose(c_ijab, c_ijab.transpose(1, 0, 3, 2))
+    assert_spinorb_antisymmetric(c_ijab)
 
     # normalize coefficients
     c_ia /= c0
     c_ijab /= c0
     return c_ia, c_ijab
+
+
+def ci_to_cluster_amplitudes(c_ia, c_ijab):
+    # TODO: docs
+    assert_spinorb_antisymmetric(c_ijab)
+    t1 = c_ia.copy()
+    t2 = c_ijab - np.einsum("ia,jb->ijab", t1, t1) + np.einsum("ib,ja->ijab", t1, t1)
+    return t1, t2
 
 
 def detstrings_singles(nocc, nvirt):
