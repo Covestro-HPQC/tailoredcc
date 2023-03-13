@@ -1,7 +1,6 @@
 # Proprietary and Confidential
 # Covestro Deutschland AG, 2023
 
-from os import remove
 import pytest
 import numpy as np
 
@@ -160,12 +159,13 @@ def test_amplitude_extraction_and_norms():
         out = subprocess.run(["clusterdec_bit.x", fp.name], capture_output=True)
         os.chdir(cwd)
         lines = [ll.strip() for ll in out.stdout.decode("ascii").split("\n")]
-        for idx, l in enumerate(lines):
-            if "|C_n|        |T_n|  |T_n|/|C_n|" in l:
+        for idx, ll in enumerate(lines):
+            if "|C_n|        |T_n|  |T_n|/|C_n|" in ll:
                 c1sq = float(lines[idx + 1].split(" ")[1])
                 c2sq = float(lines[idx + 2].split(" ")[1])
                 t1sq = float(lines[idx + 1].split(" ")[2])
                 t2sq = float(lines[idx + 2].split(" ")[2])
+                break
         np.testing.assert_allclose(c1norm, c1sq, atol=1e-7, rtol=0)
         np.testing.assert_allclose(c2norm, c2sq, atol=1e-7, rtol=0)
         np.testing.assert_allclose(t1norm, t1sq, atol=1e-7, rtol=0)
