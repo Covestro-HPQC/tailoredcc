@@ -171,4 +171,4 @@ def tccsd(scfres, c_ia, c_ijab, occslice, virtslice):
     # compute correlation/total TCCSD energy
     e_tcc = ccsd_energy(t1f, t2f, fock, eri_phys_asymm, o, v)
     print("E(TCCSD)", e_tcc + mol.energy_nuc())
-    return e_tcc + mol.energy_nuc()
+    return e_tcc + mol.energy_nuc(), t1f, t2f
