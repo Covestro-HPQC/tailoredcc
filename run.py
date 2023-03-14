@@ -31,13 +31,13 @@ nelec = mol.nelec
 print(f"CAS({nelec}, {ncas})")
 mc = mcscf.CASCI(m, ncas, nelec)
 mc.kernel()
-etccsd = tccsd_from_ci(mc)
-np.testing.assert_allclose(etccsd, -14.41978908212513, atol=1e-9, rtol=0)
+tcc = tccsd_from_ci(mc)
+np.testing.assert_allclose(tcc.e_tot, -14.41978908212513, atol=1e-9, rtol=0)
 
 ncas = 4
 nelec = 4
 print(f"CAS({nelec}, {ncas})")
 mc = mcscf.CASCI(m, ncas, nelec)
 mc.kernel()
-etccsd = tccsd_from_ci(mc)
-np.testing.assert_allclose(etccsd, -14.43271127357399, atol=1e-9, rtol=0)
+tcc = tccsd_from_ci(mc)
+np.testing.assert_allclose(tcc.e_tot, -14.43271127357399, atol=1e-9, rtol=0)

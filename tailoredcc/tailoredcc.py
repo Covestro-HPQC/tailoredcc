@@ -95,6 +95,7 @@ def solve_tccsd(
 
 
 def tccsd_from_ci(mc):
+    # TODO: docs
     nocca, noccb = mc.nelecas
     assert nocca == noccb
     nvirta = mc.ncas - nocca
