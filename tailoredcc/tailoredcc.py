@@ -1,17 +1,17 @@
 # Proprietary and Confidential
 # Covestro Deutschland AG, 2023
 
+from dataclasses import dataclass
+
 import numpy as np
-
-from openfermionpyscf._run_pyscf import compute_integrals
 from openfermion.chem.molecular_data import spinorb_from_spatial
+from openfermionpyscf._run_pyscf import compute_integrals
+from pyscf import scf
 
-from .ccsd_equations import ccsd_energy, singles_residual, doubles_residual
-from .amplitudes import (
-    ci_to_cluster_amplitudes,
-    extract_ci_singles_doubles_amplitudes_spinorb,
-    assert_spinorb_antisymmetric,
-)
+from .amplitudes import (assert_spinorb_antisymmetric,
+                         ci_to_cluster_amplitudes,
+                         extract_ci_singles_doubles_amplitudes_spinorb)
+from .ccsd_equations import ccsd_energy, doubles_residual, singles_residual
 
 
 def solve_tccsd(
@@ -110,6 +110,20 @@ def tccsd_from_ci(mc):
     return tccsd(mc._scf, c_ia, c_ijab, occslice, virtslice)
 
 
+@dataclass
+class TCC:
+    scfres: scf.HF
+    t1: np.ndarray
+    t2: np.ndarray
+    e_hf: float
+    e_cas: float
+    e_corr: float
+
+    @property
+    def e_tot(self):
+        return self.e_hf + self.e_corr
+
+
 def tccsd(scfres, c_ia, c_ijab, occslice, virtslice):
     mol = scfres.mol
     # 1. convert to T amplitudes
@@ -144,10 +158,10 @@ def tccsd(scfres, c_ia, c_ijab, occslice, virtslice):
 
     assert_spinorb_antisymmetric(t2_mo)
 
-    e_corr = (
+    e_cas = (
         ccsd_energy(t1_mo.T, t2_mo.transpose(2, 3, 0, 1), fock, eri_phys_asymm, o, v) - hf_energy
     )
-    print(f"CCSD correlation energy from CI amplitudes {e_corr:>12}")
+    print(f"CCSD correlation energy from CI amplitudes {e_cas:>12}")
 
     # solve tccsd amplitude equations
     t1f, t2f = solve_tccsd(
@@ -169,6 +183,6 @@ def tccsd(scfres, c_ia, c_ijab, occslice, virtslice):
     np.testing.assert_allclose(t1.T, t1f[t1slice], atol=1e-14)
     np.testing.assert_allclose(t2.transpose(2, 3, 0, 1), t2f[t2slice], atol=1e-14)
     # compute correlation/total TCCSD energy
-    e_tcc = ccsd_energy(t1f, t2f, fock, eri_phys_asymm, o, v)
-    print("E(TCCSD)", e_tcc + mol.energy_nuc())
-    return e_tcc + mol.energy_nuc(), t1f, t2f
+    e_tcc = ccsd_energy(t1f, t2f, fock, eri_phys_asymm, o, v) - hf_energy
+    ret = TCC(scfres, t1f, t2f, hf_energy + mol.energy_nuc(), e_cas, e_tcc)
+    return ret

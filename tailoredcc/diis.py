@@ -17,8 +17,9 @@
 """
 An implementation of DIIS acceleration for CC codes.
 """
-import numpy as np
 from itertools import product
+
+import numpy as np
 
 
 class DIIS:

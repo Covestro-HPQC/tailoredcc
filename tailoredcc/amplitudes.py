@@ -1,9 +1,8 @@
 # Proprietary and Confidential
 # Covestro Deutschland AG, 2023
 import numpy as np
-
-from pyscf.ci.cisd import tn_addrs_signs
 from pyscf.cc.addons import spatial2spin
+from pyscf.ci.cisd import tn_addrs_signs
 
 
 def extract_ci_singles_doubles_amplitudes_spinorb(mc):

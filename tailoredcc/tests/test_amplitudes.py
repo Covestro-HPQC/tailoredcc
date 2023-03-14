@@ -1,21 +1,16 @@
 # Proprietary and Confidential
 # Covestro Deutschland AG, 2023
 
-import pytest
 import numpy as np
-
-from pyscf.fci import cistring
+import pytest
 from pyscf.ci.cisd import tn_addrs_signs
+from pyscf.fci import cistring
 
 from tailoredcc.amplitudes import (
-    ci_to_cluster_amplitudes,
+    amplitudes_to_spinorb, assert_spinorb_antisymmetric,
+    ci_to_cluster_amplitudes, detstrings_doubles, detstrings_singles,
     extract_ci_singles_doubles_amplitudes_spinorb,
-    detstrings_singles,
-    detstrings_doubles,
-    remove_index_restriction_doubles,
-    assert_spinorb_antisymmetric,
-    amplitudes_to_spinorb,
-)
+    remove_index_restriction_doubles)
 from tailoredcc.clusterdec import dump_clusterdec
 
 
@@ -118,7 +113,7 @@ def test_amplitudes_to_spinorb(nocc, nvirt):
 
 
 def test_amplitude_extraction_and_norms():
-    from pyscf import gto, scf, mcscf
+    from pyscf import gto, mcscf, scf
 
     mol = gto.Mole()
     mol.build(
@@ -143,9 +138,9 @@ def test_amplitude_extraction_and_norms():
     t1norm = np.vdot(t_ia, t_ia)
     t2norm = 0.25 * np.vdot(t_ijab, t_ijab)
 
-    import tempfile
-    import subprocess
     import os
+    import subprocess
+    import tempfile
     from pathlib import Path
     from shutil import which
 
