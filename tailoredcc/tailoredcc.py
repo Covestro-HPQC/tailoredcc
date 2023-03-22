@@ -108,6 +108,10 @@ def tccsd_from_ci(mc):
     occslice = slice(2 * mc.ncore, 2 * mc.ncore + nocca + noccb)
     virtslice = slice(0, nvirta + nvirtb)
 
+    if "CASSCF" in str(type(mc)):
+        mc._scf.mo_coeff = mc.mo_coeff
+        mc._scf.mo_energy = mc.mo_energy
+
     return tccsd(mc._scf, c_ia, c_ijab, occslice, virtslice)
 
 

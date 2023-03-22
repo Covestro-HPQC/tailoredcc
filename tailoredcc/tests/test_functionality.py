@@ -44,3 +44,14 @@ def test_functionality():
     tcc = tccsd_from_ci(mc)
     np.testing.assert_allclose(tcc.e_cas, mc.e_tot - m.e_tot, atol=1e-9, rtol=0)
     np.testing.assert_allclose(tcc.e_tot, -14.43271127357399, atol=1e-9, rtol=0)
+
+    print(f"CASSCF({nelec}, {ncas})")
+    mc = mcscf.CASSCF(m, ncas, nelec)
+    mc.conv_tol = 1e-10
+    mc.conv_tol_grad = 1e-7
+    mc.kernel()
+    tcc = tccsd_from_ci(mc)
+    np.testing.assert_allclose(
+        tcc.e_cas + tcc.e_hf - mol.energy_nuc(), mc.e_tot - mol.energy_nuc(), atol=1e-9, rtol=0
+    )
+    np.testing.assert_allclose(tcc.e_tot, -14.437612867176817, atol=5e-8, rtol=0)

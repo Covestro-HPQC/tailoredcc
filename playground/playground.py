@@ -102,7 +102,7 @@ def ccsd_energy_correlation(t1, t2, f, g, o, v):
     # energy = 1.0 * einsum('ii', f[o, o])
 
     # 	  1.0000 f(i,a)*t1(a,i)
-    # energy += 1.0 * einsum('ia,ai', f[o, v], t1)
+    energy += 1.0 * einsum('ia,ai', f[o, v], t1)
 
     # #	 -0.5000 <j,i||j,i>
     # energy += -0.5 * einsum('jiji', g[o, o, o, o])
@@ -122,12 +122,12 @@ mol = gto.Mole()
 mol.build(
     verbose=4,
     # atom="N, 0., 0., 0. ; N,  0., 0., 1.4",
-    atom="H, 0., 0., 0. ; H,  0., 0., 1.0",
+    # atom="H, 0., 0., 0. ; H,  0., 0., 1.0",
     # atom="He, 0., 0., 0. ; He,  0., 0., 1.0",
-    # atom="Li, 0., 0., 0. ; Li,  0., 0., 1.0",
+    atom="Li, 0., 0., 0. ; Li,  0., 0., 1.0",
     # basis="minao",
     # basis="sto-3g",
-    basis="3-21g",
+    # basis="3-21g",
     # basis="6-31g",
     # basis="cc-pvdz",
     # symmetry = True,
@@ -155,12 +155,14 @@ nelec = mol.nelec
 # ncas = 2
 # nelec = 2
 
-# ncas = 4
-# nelec = 4
+ncas = 4
+nelec = 4
 
 print(f"CAS({nelec}, {ncas})")
-mc = mcscf.CASCI(m, ncas, nelec)
-# mc = mcscf.CASSCF(m, ncas, nelec)
+# mc = mcscf.CASCI(m, ncas, nelec)
+mc = mcscf.CASSCF(m, ncas, nelec)
+mc.conv_tol = 1e-10
+mc.conv_tol_grad = 1e-7
 mc.kernel()
 
 # from clusterdec import dump_clusterdec
@@ -281,7 +283,10 @@ t2slice = (virtslice, virtslice, occslice, occslice)
 from openfermionpyscf._run_pyscf import compute_integrals
 from openfermion.chem.molecular_data import spinorb_from_spatial
 
-# m.mo_coeff = mc.mo_coeff
+print('maxdiff', np.max(np.abs(m.mo_coeff- mc.mo_coeff)))
+print('energies', m.mo_energy, mc.mo_energy)
+m.mo_coeff = mc.mo_coeff
+m.mo_energy = mc.mo_energy
 
 oei, eri_of_spatial = compute_integrals(mol, m)
 soei, eri_of = spinorb_from_spatial(oei, eri_of_spatial)
@@ -291,18 +296,19 @@ nvirt = 2 * mol.nao_nr() - nocc
 # to Physicists' notation <12|1'2'> (OpenFermion stores <12|2'1'>)
 eri_phys_asymm = eri_of_asymm.transpose(0, 1, 3, 2)
 
-# orbital energy differences
-eps = np.kron(m.mo_energy, np.ones(2))
 n = np.newaxis
 o = slice(None, nocc)
 v = slice(nocc, None)
-e_abij = 1 / (-eps[v, n, n, n] - eps[n, v, n, n] + eps[n, n, o, n] + eps[n, n, n, o])
-e_ai = 1 / (-eps[v, n] + eps[n, o])
 
 # (canonical) Fock operator
 fock = soei + np.einsum("piqi->pq", eri_phys_asymm[:, o, :, o])
 hf_energy = 0.5 * np.einsum("ii", (fock + soei)[o, o])
-np.testing.assert_allclose(hf_energy + mol.energy_nuc(), m.e_tot, atol=1e-12, rtol=0)
+# np.testing.assert_allclose(hf_energy + mol.energy_nuc(), m.e_tot, atol=1e-12, rtol=0)
+
+# orbital energy differences
+eps = np.kron(m.mo_energy, np.ones(2))
+e_abij = 1 / (-eps[v, n, n, n] - eps[n, v, n, n] + eps[n, n, o, n] + eps[n, n, n, o])
+e_ai = 1 / (-eps[v, n] + eps[n, o])
 
 # full MO space T amplitudes
 t1_mo = np.zeros((nocc, nvirt))
@@ -314,10 +320,11 @@ np.testing.assert_allclose(t2_mo, -1.0 * t2_mo.transpose(0, 1, 3, 2))
 np.testing.assert_allclose(t2_mo, t2_mo.transpose(1, 0, 3, 2))
 
 # t_ai and t_{abij} in pdaggerq
-e_corr = ccsd_energy_correlation(t1_mo.T, t2_mo.transpose(2, 3, 0, 1), fock, eri_phys_asymm, o, v)
-e_cas = mc.e_tot - m.e_tot
-print(f"CCSD correlation energy from CI amplitudes {e_corr:>12}")
-print(f"CI energy (excluding E_core)               {e_cas:>12}")
+e_corr = ccsd_energy(t1_mo.T, t2_mo.transpose(2, 3, 0, 1), fock, eri_phys_asymm, o, v)
+# e_corr = ccsd_energy(t1_mo.T, t2_mo.transpose(2, 3, 0, 1), fock, eri_phys_asymm, o, v)
+e_cas = mc.e_tot - mol.energy_nuc()
+print(f"CCSD electronic energy from CI amplitudes {e_corr:>12}")
+print(f"CI energy (excluding nuclear repulsion)   {e_cas:>12}")
 np.testing.assert_allclose(e_cas, e_corr, atol=1e-10)
 
 
@@ -326,7 +333,7 @@ from pyscf.cc import CCSD
 
 cc = CCSD(m)
 cc.conv_tol_normt = 1e-8
-cc.conv_tol = 1e-11
+cc.conv_tol = 1e-10
 cc.kernel()
 t1_ref = spatial2spin(cc.t1)
 t2_ref = spatial2spin(cc.t2)
@@ -363,8 +370,8 @@ t1ext[t1slice] = 0.0
 t2ext[t2slice] = 0.0
 e_ext = ccsd_energy_correlation(t1ext, t2ext, fock, eri_phys_asymm, o, v)
 e_tcc = ccsd_energy_correlation(t1f, t2f, fock, eri_phys_asymm, o, v)
-np.testing.assert_allclose(e_tcc, e_ext + e_corr, atol=1e-12, rtol=0)
+np.testing.assert_allclose(e_tcc, e_ext + e_corr - hf_energy, atol=1e-12, rtol=0)
 print("Ecas", e_corr)
 print("Eext", e_ext)
 print("Ecas + Eext", e_ext + e_corr)
-print("E(TCCSD)", e_ext + e_corr + m.e_tot)
+print("E(TCCSD)", e_ext + e_corr + mol.energy_nuc())
