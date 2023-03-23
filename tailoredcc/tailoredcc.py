@@ -32,11 +32,7 @@ def solve_tccsd(
 ):
     t1slice = (virtslice, occslice)
     t2slice = (virtslice, virtslice, occslice, occslice)
-    t1cas = t1[t1slice].copy()
-    t2cas = t2[t2slice].copy()
 
-    t1[t1slice] = 0.0
-    t2[t2slice] = 0.0
     # initialize diis if diis_size is not None
     # else normal iterate
     if diis_size is not None:
@@ -46,25 +42,41 @@ def solve_tccsd(
         t1_dim = t1.size
         old_vec = np.hstack((t1.flatten(), t2.flatten()))
 
-    fock_e_ai = np.reciprocal(e_ai)
-    fock_e_abij = np.reciprocal(e_abij)
+    # fock_e_ai = np.reciprocal(e_ai)
+    # fock_e_abij = np.reciprocal(e_abij)
+
+    # gc = g.copy()
+    # fc = fock.copy()
+    # oc = occslice
+    # vc = virtslice
+    # vcf = virtslice_full
+    # from itertools import product
+    # for p in product([oc, vcf], repeat=2):
+    #     fc[p] = 0.0
+    # for p in product(["o", "v"], repeat=4):
+    #     print(p)
+    # for p in product([oc, vcf], repeat=4):
+    #     gc[p] = 0.0
+
+    # fock_e_ai[vc, oc] = 0.0
+    # fock_e_abij[vc, vc, oc, oc] = 0.0
+    # e_ai[vc, oc] = 0.0
+    # e_abij[vc, vc, oc, oc] = 0.0
+
     old_energy = ccsd_energy(t1, t2, fock, g, o, v)
     print(f"\tInitial CCSD energy: {old_energy}")
     for idx in range(max_iter):
-        t1[t1slice] = 0.0
-        t2[t2slice] = 0.0
-
-        singles_res = singles_residual(t1, t2, fock, g, o, v) + fock_e_ai * t1
-        doubles_res = doubles_residual(t1, t2, fock, g, o, v) + fock_e_abij * t2
+        singles_res = singles_residual(t1, t2, fock, g, o, v)  # + fock_e_ai * t1
+        doubles_res = doubles_residual(t1, t2, fock, g, o, v)  # + fock_e_abij * t2
 
         singles_res[t1slice] = 0.0
         doubles_res[t2slice] = 0.0
 
-        new_singles = singles_res * e_ai
-        new_doubles = doubles_res * e_abij
+        new_singles = t1 + singles_res * e_ai
+        new_doubles = t2 + doubles_res * e_abij
 
-        assert np.all(new_singles[t1slice] == 0.0)
-        assert np.all(new_doubles[t2slice] == 0.0)
+        # new_singles[t1slice] = t1cas
+        # new_doubles[t2slice] = t2cas
 
         # diis update
         if diis_size is not None:
@@ -73,16 +85,19 @@ def solve_tccsd(
             new_vectorized_iterate = diis_update.compute_new_vec(vectorized_iterate, error_vec)
             new_singles = new_vectorized_iterate[:t1_dim].reshape(t1.shape)
             new_doubles = new_vectorized_iterate[t1_dim:].reshape(t2.shape)
-            old_vec = new_vectorized_iterate
 
-        new_singles[t1slice] = t1cas
-        new_doubles[t2slice] = t2cas
+            # np.testing.assert_allclose(new_singles[t1slice], t1cas)
+            # np.testing.assert_allclose(new_doubles[t2slice], t2cas)
+            # new_singles[t1slice] = t1cas
+            # new_doubles[t2slice] = t2cas
+
+            old_vec = new_vectorized_iterate
 
         current_energy = ccsd_energy(new_singles, new_doubles, fock, g, o, v)
         delta_e = np.abs(old_energy - current_energy)
 
         if delta_e < stopping_eps:
-            print(f"\tConverged in iteration {idx}")
+            print(f"\tConverged in iteration {idx}.")
             return new_singles, new_doubles
         else:
             t1 = new_singles
@@ -90,7 +105,7 @@ def solve_tccsd(
             old_energy = current_energy
             print("\tIteration {: 5d}\t{: 5.15f}\t{: 5.15f}".format(idx, old_energy, delta_e))
     else:
-        print("Did not converge")
+        print("Did not converge.")
         return new_singles, new_doubles
 
 
@@ -107,6 +122,8 @@ def tccsd_from_ci(mc):
     assert isinstance(mc.ncore, int)
     occslice = slice(2 * mc.ncore, 2 * mc.ncore + nocca + noccb)
     virtslice = slice(0, nvirta + nvirtb)
+    # occ_offset = 2 * mc.ncore + nocca + noccb
+    # virtslice_full = slice(occ_offset, occ_offset + nvirta + nvirtb)
 
     if "CASSCF" in str(type(mc)):
         mc._scf.mo_coeff = mc.mo_coeff
@@ -185,9 +202,26 @@ def tccsd(scfres, c_ia, c_ijab, occslice, virtslice):
     # test that the T_CAS amplitudes are still intact
     t1slice = (virtslice, occslice)
     t2slice = (virtslice, virtslice, occslice, occslice)
+
     np.testing.assert_allclose(t1.T, t1f[t1slice], atol=1e-14)
     np.testing.assert_allclose(t2.transpose(2, 3, 0, 1), t2f[t2slice], atol=1e-14)
+
     # compute correlation/total TCCSD energy
     e_tcc = ccsd_energy(t1f, t2f, fock, eri_phys_asymm, o, v) - hf_energy
+
+    t1ext = t1f.copy()
+    t2ext = t2f.copy()
+    t1ext[t1slice] = 0.0
+    t2ext[t2slice] = 0.0
+    e_ext = ccsd_energy(t1ext, t2ext, fock, eri_phys_asymm, o, v) - hf_energy
+
+    # print(e_tcc - e_cas - e_ext)
+
     ret = TCC(scfres, t1f, t2f, hf_energy + mol.energy_nuc(), e_cas, e_tcc)
+    print(
+        f"E(TCCSD)= {ret.e_tot:.10f}",
+        f"E_corr = {e_tcc:.10f}",
+        f"E_ext = {e_ext:.10f}",
+        f"E_cas = {e_cas:.10f}",
+    )
     return ret

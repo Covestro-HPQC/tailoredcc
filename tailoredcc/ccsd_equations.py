@@ -1,7 +1,14 @@
 # Proprietary and Confidential
 # Covestro Deutschland AG, 2023
 
-from numpy import einsum
+# from numpy import einsum
+# from jax.numpy import einsum
+from opt_einsum import contract
+
+
+def einsum(*args, **kwargs):
+    kwargs["optimize"] = True
+    return contract(*args, **kwargs)
 
 
 def ccsd_energy(t1, t2, f, g, o, v):
