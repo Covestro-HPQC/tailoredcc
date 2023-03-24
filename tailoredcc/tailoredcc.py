@@ -4,14 +4,16 @@
 from dataclasses import dataclass
 
 import numpy as np
-from openfermion.chem.molecular_data import spinorb_from_spatial
 from openfermionpyscf._run_pyscf import compute_integrals
 from pyscf import scf
 
-from .amplitudes import (assert_spinorb_antisymmetric,
-                         ci_to_cluster_amplitudes,
-                         extract_ci_singles_doubles_amplitudes_spinorb)
+from .amplitudes import (
+    assert_spinorb_antisymmetric,
+    ci_to_cluster_amplitudes,
+    extract_ci_singles_doubles_amplitudes_spinorb,
+)
 from .ccsd_equations import ccsd_energy, doubles_residual, singles_residual
+from .utils import spinorb_from_spatial
 
 
 def solve_tccsd(
@@ -42,41 +44,18 @@ def solve_tccsd(
         t1_dim = t1.size
         old_vec = np.hstack((t1.flatten(), t2.flatten()))
 
-    # fock_e_ai = np.reciprocal(e_ai)
-    # fock_e_abij = np.reciprocal(e_abij)
-
-    # gc = g.copy()
-    # fc = fock.copy()
-    # oc = occslice
-    # vc = virtslice
-    # vcf = virtslice_full
-    # from itertools import product
-    # for p in product([oc, vcf], repeat=2):
-    #     fc[p] = 0.0
-    # for p in product(["o", "v"], repeat=4):
-    #     print(p)
-    # for p in product([oc, vcf], repeat=4):
-    #     gc[p] = 0.0
-
-    # fock_e_ai[vc, oc] = 0.0
-    # fock_e_abij[vc, vc, oc, oc] = 0.0
-    # e_ai[vc, oc] = 0.0
-    # e_abij[vc, vc, oc, oc] = 0.0
-
     old_energy = ccsd_energy(t1, t2, fock, g, o, v)
     print(f"\tInitial CCSD energy: {old_energy}")
     for idx in range(max_iter):
-        singles_res = singles_residual(t1, t2, fock, g, o, v)  # + fock_e_ai * t1
-        doubles_res = doubles_residual(t1, t2, fock, g, o, v)  # + fock_e_abij * t2
+        singles_res = singles_residual(t1, t2, fock, g, o, v)
+        doubles_res = doubles_residual(t1, t2, fock, g, o, v)
 
+        # set the CAS-only residual to zero
         singles_res[t1slice] = 0.0
         doubles_res[t2slice] = 0.0
 
         new_singles = t1 + singles_res * e_ai
         new_doubles = t2 + doubles_res * e_abij
-
-        # new_singles[t1slice] = t1cas
-        # new_doubles[t2slice] = t2cas
 
         # diis update
         if diis_size is not None:
@@ -85,12 +64,6 @@ def solve_tccsd(
             new_vectorized_iterate = diis_update.compute_new_vec(vectorized_iterate, error_vec)
             new_singles = new_vectorized_iterate[:t1_dim].reshape(t1.shape)
             new_doubles = new_vectorized_iterate[t1_dim:].reshape(t2.shape)
-
-            # np.testing.assert_allclose(new_singles[t1slice], t1cas)
-            # np.testing.assert_allclose(new_doubles[t2slice], t2cas)
-            # new_singles[t1slice] = t1cas
-            # new_doubles[t2slice] = t2cas
-
             old_vec = new_vectorized_iterate
 
         current_energy = ccsd_energy(new_singles, new_doubles, fock, g, o, v)
@@ -122,8 +95,6 @@ def tccsd_from_ci(mc):
     assert isinstance(mc.ncore, int)
     occslice = slice(2 * mc.ncore, 2 * mc.ncore + nocca + noccb)
     virtslice = slice(0, nvirta + nvirtb)
-    # occ_offset = 2 * mc.ncore + nocca + noccb
-    # virtslice_full = slice(occ_offset, occ_offset + nvirta + nvirtb)
 
     if "CASSCF" in str(type(mc)):
         mc._scf.mo_coeff = mc.mo_coeff
@@ -182,6 +153,7 @@ def tccsd(scfres, c_ia, c_ijab, occslice, virtslice):
     assert_spinorb_antisymmetric(t2_mo)
 
     from .ccsd_equations import ccsd_energy_correlation
+
     e_cas = (
         ccsd_energy_correlation(t1_mo.T, t2_mo.transpose(2, 3, 0, 1), fock, eri_phys_asymm, o, v)
         # ccsd_energy(t1_mo.T, t2_mo.transpose(2, 3, 0, 1), fock, eri_phys_asymm, o, v) - hf_energy
@@ -207,34 +179,9 @@ def tccsd(scfres, c_ia, c_ijab, occslice, virtslice):
     t2slice = (virtslice, virtslice, occslice, occslice)
     np.testing.assert_allclose(t1.T, t1f[t1slice], atol=1e-14, rtol=0)
     np.testing.assert_allclose(t2.transpose(2, 3, 0, 1), t2f[t2slice], atol=1e-14, rtol=0)
-    
-    # compute correlation/total TCCSD energy
-    e_tcc = ccsd_energy_correlation(t1f, t2f, fock, eri_phys_asymm, o, v) #- hf_energy
 
-    # NOTE: experiments on separately computing E_ext
-    # t1ext = t1f.copy()
-    # t2ext = t2f.copy()
-    # t1ext[t1slice] = 0.0
-    # t2ext[t2slice] = 0.0
-    # NOTE: not correct because not all T_1^2 terms included in energy
-    # e_ext = ccsd_energy_correlation(t1ext, t2ext, fock, eri_phys_asymm, o, v) #- hf_energy
-    # t1bla = np.zeros_like(t1f)
-    # t1bla[t1slice] = t1.T
-    # t2bla = np.zeros_like(t2f)
-    # t2bla[t2slice] = t2.transpose(2, 3, 0, 1)
-    # from numpy import einsum 
-    # g = eri_phys_asymm
-    # energy = 0.25 * einsum("jiab,abji", g[o, o, v, v], t2ext)
-    # energy += -0.5 * einsum(
-    #     "jiab,ai,bj", g[o, o, v, v], t1ext, t1bla, optimize=["einsum_path", (0, 1), (0, 1)]
-    # )
-    # energy += -0.5 * einsum(
-    #     "jiab,ai,bj", g[o, o, v, v], t1bla, t1ext, optimize=["einsum_path", (0, 1), (0, 1)]
-    # )
-    # energy += -0.5 * einsum(
-    #     "jiab,ai,bj", g[o, o, v, v], t1ext, t1ext, optimize=["einsum_path", (0, 1), (0, 1)]
-    # )
-    # print(e_tcc - e_cas - energy)
+    # compute correlation/total TCCSD energy
+    e_tcc = ccsd_energy_correlation(t1f, t2f, fock, eri_phys_asymm, o, v)  # - hf_energy
 
     ret = TCC(scfres, t1f, t2f, hf_energy + mol.energy_nuc(), e_cas, e_tcc)
     print(

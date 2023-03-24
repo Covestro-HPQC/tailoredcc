@@ -53,6 +53,8 @@ def extract_ci_singles_doubles_amplitudes_spinorb(mc):
     c0 = fcivec[0, 0]
     print(f"c0 = {c0:.8f}")
     print(f"|c0|^2 = {c0**2:.8f}")
+    if np.abs(c0) < 1e-8:
+        raise ValueError("Coefficient of ref. determinant is too close to zero.")
     return amplitudes_to_spinorb(c0, cis_a, cis_b, cid_aa, cid_ab, cid_bb)
 
 

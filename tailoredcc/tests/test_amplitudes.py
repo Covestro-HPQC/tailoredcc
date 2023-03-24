@@ -7,10 +7,14 @@ from pyscf.ci.cisd import tn_addrs_signs
 from pyscf.fci import cistring
 
 from tailoredcc.amplitudes import (
-    amplitudes_to_spinorb, assert_spinorb_antisymmetric,
-    ci_to_cluster_amplitudes, detstrings_doubles, detstrings_singles,
+    amplitudes_to_spinorb,
+    assert_spinorb_antisymmetric,
+    ci_to_cluster_amplitudes,
+    detstrings_doubles,
+    detstrings_singles,
     extract_ci_singles_doubles_amplitudes_spinorb,
-    remove_index_restriction_doubles)
+    remove_index_restriction_doubles,
+)
 from tailoredcc.clusterdec import dump_clusterdec
 
 
