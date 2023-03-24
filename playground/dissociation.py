@@ -5,38 +5,48 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-# ncas = 2
-# nelecas = 2
+ncas = 2
+nelecas = 2
 
-ncas = 4
-nelecas = 4
+# ncas = 4
+# nelecas = 4
 
 # ncas = 8
 # nelecas = 8
 
 
 def build_pes(r_hf, unit="Bohr", label=None):
-    # mol = gto.M(
-    #     atom=f"""
-    #     H 0 0 0
-    #     F 0 0 {r_hf}
-    #     """,
-    #     # symmetry=True,
-    #     unit=unit,
-    #     basis="cc-pVDZ"
-    # )
-
     mol = gto.M(
         atom=f"""
-        O
-        H  1  {r_hf}
-        H  1  {r_hf} 2 104.52
+        H 0 0 0
+        F 0 0 {r_hf}
         """,
-        unit=unit,
-        basis="cc-pVDZ",
         # symmetry=True,
+        unit=unit,
+        basis="cc-pVDZ"
     )
-    mol.tofile("h2o_bartlett.xyz", format="xyz")
+    
+    # mol = gto.M(
+    #     atom=f"""
+    #     F 0 0 0
+    #     F 0 0 {r_hf}
+    #     """, 
+    #     unit=unit,
+    #     basis="cc-pVDZ",
+    #     # symmetry=True,
+    # )
+
+    # mol = gto.M(
+    #     atom=f"""
+    #     O
+    #     H  1  {r_hf}
+    #     H  1  {r_hf} 2 104.52
+    #     """,
+    #     unit=unit,
+    #     basis="cc-pVDZ",
+    #     # symmetry=True,
+    # )
+    # mol.tofile("h2o_bartlett.xyz", format="xyz")
 
     scfres = scf.HF(mol)
     scfres.max_cycle = 500
@@ -47,10 +57,28 @@ def build_pes(r_hf, unit="Bohr", label=None):
     scfres.verbose = 4
     scfres.kernel()
     scfres.analyze()
-   
-    # swap = [3, 4]
-    # scfres.mo_coeff[:, swap[::-1]] = scfres.mo_coeff[:, swap]
-    # scfres.mo_energy[swap[::-1]] = scfres.mo_energy[swap]
+
+    # swap for HF
+    if label == "1.0":
+        print("Swapping")
+        swap = [2, 4]
+        scfres.mo_coeff[:, swap[::-1]] = scfres.mo_coeff[:, swap]
+        scfres.mo_energy[swap[::-1]] = scfres.mo_energy[swap]
+    
+    # swap for F2
+    # if label == "1.0":
+    #     print("Swapping")
+    #     swap = [6, 8]
+    #     scfres.mo_coeff[:, swap[::-1]] = scfres.mo_coeff[:, swap]
+    #     scfres.mo_energy[swap[::-1]] = scfres.mo_energy[swap]
+    # else:
+    #     print("Swapping dissoc")
+    #     swap = [7, 8]
+    #     scfres.mo_coeff[:, swap[::-1]] = scfres.mo_coeff[:, swap]
+    #     scfres.mo_energy[swap[::-1]] = scfres.mo_energy[swap]
+    #     swap = [6, 9]
+    #     scfres.mo_coeff[:, swap[::-1]] = scfres.mo_coeff[:, swap]
+    #     scfres.mo_energy[swap[::-1]] = scfres.mo_energy[swap]
     
     # CASCI
     mc = mcscf.CASCI(scfres, nelecas=nelecas, ncas=ncas)
@@ -61,7 +89,7 @@ def build_pes(r_hf, unit="Bohr", label=None):
     #     label = str(r_hf)
     # if dump_cube:
     #     from pyscf.tools import cubegen
-    #     for idx in range(0, mc.ncore + ncas):
+    #     for idx in range(0, mc.ncore + ncas + 6):
     #         cubegen.orbital(mol, outfile=f"cubes/orb_{label}_{idx}.cube", coeff=scfres.mo_coeff[:, idx])
     
     # TCCSD
@@ -104,16 +132,23 @@ df = pd.DataFrame()
 
 # NOTE: HF
 # r0 = 1.733  # bohr
-# r1 = 2.0 * r0
-unit = "Bohr"
-# r0 = 0.917
-# r1 = 3.0
+# r1 = 4.0 * r0
+# unit = "Bohr"
+r0 = 0.917
+r1 = 3.2
+unit = "Angstrom"
 # for dist in np.linspace(0.7 * r0, 3.5 * r0, 20):
-sz = 1
+
+# NOTE: F2
+# r0 = 1.4
+# r1 = 4.0
+# unit = "Angstrom"
 
 # NOTE: H2O
-r0 = 1.809  # bohr
-r1 = 4.0 * r0
+# r0 = 1.809  # bohr
+# r1 = 4.0 * r0
+
+sz = 2
 
 for dist in np.linspace(r0, r1, sz):
     print(dist)
@@ -126,8 +161,8 @@ value_vars = [
     "tccsd",
     # "casscf", "tccsd_cas"
 ]
-# for val in value_vars:
-#     df[val] -= np.min(df[val])
+for val in value_vars:
+    df[val] -= np.min(df[val])
 
 dfm = pd.melt(df, id_vars="r_hf", value_vars=value_vars, value_name="energy", var_name="method")
 print(dfm)
@@ -139,3 +174,9 @@ plt.savefig("dissociation_hf.png")
 
 df.to_json("dissociation.json")
 dfm.to_json("dissociation_melt.json")
+
+# ref value from 10.1063/1.4767900, Table I
+# TCCSD = 203.38 mH
+# CCSD = 222.55 mH
+np.testing.assert_allclose(df['tccsd'][1], 203.38 / 1e3, atol=1e-5, rtol=0) 
+np.testing.assert_allclose(df['ccsd'][1], 222.55 / 1e3, atol=1e-5, rtol=0) 
