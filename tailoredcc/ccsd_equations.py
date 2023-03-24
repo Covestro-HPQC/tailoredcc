@@ -11,6 +11,38 @@ def einsum(*args, **kwargs):
     return contract(*args, **kwargs)
 
 
+def ccsd_energy_correlation(t1, t2, f, g, o, v):
+    """
+    < 0 | e(-T) H e(T) | 0> :
+    :param f:
+    :param g:
+    :param t1:
+    :param t2:
+    :param o:
+    :param v:
+    :return:
+    """
+    # 	  1.0000 f(i,i)
+    # energy = 1.0 * einsum("ii", f[o, o])
+
+    # 	  1.0000 f(i,a)*t1(a,i)
+    energy = 0.0
+    energy += 1.0 * einsum("ia,ai", f[o, v], t1)
+
+    # 	 -0.5000 <j,i||j,i>
+    # energy += -0.5 * einsum("jiji", g[o, o, o, o])
+
+    # 	  0.2500 <j,i||a,b>*t2(a,b,j,i)
+    energy += 0.25 * einsum("jiab,abji", g[o, o, v, v], t2)
+
+    # 	 -0.5000 <j,i||a,b>*t1(a,i)*t1(b,j)
+    energy += -0.5 * einsum(
+        "jiab,ai,bj", g[o, o, v, v], t1, t1, optimize=["einsum_path", (0, 1), (0, 1)]
+    )
+
+    return energy
+
+
 def ccsd_energy(t1, t2, f, g, o, v):
     """
     < 0 | e(-T) H e(T) | 0> :

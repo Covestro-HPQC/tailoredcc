@@ -172,6 +172,7 @@ def tccsd(scfres, c_ia, c_ijab, occslice, virtslice):
     # (canonical) Fock operator
     fock = soei + np.einsum("piqi->pq", eri_phys_asymm[:, o, :, o])
     hf_energy = 0.5 * np.einsum("ii", (fock + soei)[o, o])
+
     # 3. map T amplitudes to full MO space
     t1_mo = np.zeros((nocc, nvirt))
     t2_mo = np.zeros((nocc, nocc, nvirt, nvirt))
@@ -180,8 +181,10 @@ def tccsd(scfres, c_ia, c_ijab, occslice, virtslice):
 
     assert_spinorb_antisymmetric(t2_mo)
 
+    from .ccsd_equations import ccsd_energy_correlation
     e_cas = (
-        ccsd_energy(t1_mo.T, t2_mo.transpose(2, 3, 0, 1), fock, eri_phys_asymm, o, v) - hf_energy
+        ccsd_energy_correlation(t1_mo.T, t2_mo.transpose(2, 3, 0, 1), fock, eri_phys_asymm, o, v)
+        # ccsd_energy(t1_mo.T, t2_mo.transpose(2, 3, 0, 1), fock, eri_phys_asymm, o, v) - hf_energy
     )
     print(f"CCSD correlation energy from CI amplitudes {e_cas:>12}")
 
@@ -202,26 +205,42 @@ def tccsd(scfres, c_ia, c_ijab, occslice, virtslice):
     # test that the T_CAS amplitudes are still intact
     t1slice = (virtslice, occslice)
     t2slice = (virtslice, virtslice, occslice, occslice)
-
-    np.testing.assert_allclose(t1.T, t1f[t1slice], atol=1e-14)
-    np.testing.assert_allclose(t2.transpose(2, 3, 0, 1), t2f[t2slice], atol=1e-14)
-
+    np.testing.assert_allclose(t1.T, t1f[t1slice], atol=1e-14, rtol=0)
+    np.testing.assert_allclose(t2.transpose(2, 3, 0, 1), t2f[t2slice], atol=1e-14, rtol=0)
+    
     # compute correlation/total TCCSD energy
-    e_tcc = ccsd_energy(t1f, t2f, fock, eri_phys_asymm, o, v) - hf_energy
+    e_tcc = ccsd_energy_correlation(t1f, t2f, fock, eri_phys_asymm, o, v) #- hf_energy
 
-    t1ext = t1f.copy()
-    t2ext = t2f.copy()
-    t1ext[t1slice] = 0.0
-    t2ext[t2slice] = 0.0
-    e_ext = ccsd_energy(t1ext, t2ext, fock, eri_phys_asymm, o, v) - hf_energy
-
-    # print(e_tcc - e_cas - e_ext)
+    # NOTE: experiments on separately computing E_ext
+    # t1ext = t1f.copy()
+    # t2ext = t2f.copy()
+    # t1ext[t1slice] = 0.0
+    # t2ext[t2slice] = 0.0
+    # NOTE: not correct because not all T_1^2 terms included in energy
+    # e_ext = ccsd_energy_correlation(t1ext, t2ext, fock, eri_phys_asymm, o, v) #- hf_energy
+    # t1bla = np.zeros_like(t1f)
+    # t1bla[t1slice] = t1.T
+    # t2bla = np.zeros_like(t2f)
+    # t2bla[t2slice] = t2.transpose(2, 3, 0, 1)
+    # from numpy import einsum 
+    # g = eri_phys_asymm
+    # energy = 0.25 * einsum("jiab,abji", g[o, o, v, v], t2ext)
+    # energy += -0.5 * einsum(
+    #     "jiab,ai,bj", g[o, o, v, v], t1ext, t1bla, optimize=["einsum_path", (0, 1), (0, 1)]
+    # )
+    # energy += -0.5 * einsum(
+    #     "jiab,ai,bj", g[o, o, v, v], t1bla, t1ext, optimize=["einsum_path", (0, 1), (0, 1)]
+    # )
+    # energy += -0.5 * einsum(
+    #     "jiab,ai,bj", g[o, o, v, v], t1ext, t1ext, optimize=["einsum_path", (0, 1), (0, 1)]
+    # )
+    # print(e_tcc - e_cas - energy)
 
     ret = TCC(scfres, t1f, t2f, hf_energy + mol.energy_nuc(), e_cas, e_tcc)
     print(
         f"E(TCCSD)= {ret.e_tot:.10f}",
         f"E_corr = {e_tcc:.10f}",
-        f"E_ext = {e_ext:.10f}",
+        # f"E_ext = {e_ext:.10f}",
         f"E_cas = {e_cas:.10f}",
     )
     return ret
