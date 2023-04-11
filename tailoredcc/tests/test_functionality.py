@@ -2,7 +2,7 @@
 # Covestro Deutschland AG, 2023
 
 
-def test_functionality():
+def test_cas_energy_crossref():
     # TODO: refactor test...
     import numpy as np
     from pyscf import gto, mcscf, scf

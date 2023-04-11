@@ -58,6 +58,62 @@ def extract_ci_singles_doubles_amplitudes_spinorb(mc):
     return amplitudes_to_spinorb(c0, cis_a, cis_b, cid_aa, cid_ab, cid_bb)
 
 
+def extract_vqe_singles_doubles_amplitudes_spinorb(vqe):
+    # TODO: docs
+    # NOTE: of uses alpha_1, beta_1, alpha_2, beta_2, ... MO ordering
+    # (aka interleaved qubit ordering),
+    ncas = vqe.nact
+    nocca, noccb = vqe.nalpha, vqe.nbeta
+    if nocca != noccb:
+        raise NotImplementedError(
+            "Amplitude conversion only implemented " "for closed-shell active space."
+        )
+    nvirta = ncas - nocca
+    nvirtb = ncas - noccb
+    assert nvirta == nvirtb
+
+    # get the singly/doubly excited det addresses
+    # and the corresponding sign changes (true vacuum -> Fermi vacuum)
+    _, t1signs = tn_addrs_signs(ncas, nocca, 1)
+    _, t2signs = tn_addrs_signs(ncas, nocca, 2)
+
+    hfdet = np.zeros(ncas, dtype=int)
+    hfdet[:nocca] = 1
+    _, detsa = detstrings_singles(nocca, nvirta)
+    _, detsaa = detstrings_doubles(nocca, nvirta)
+
+    cis_a = (
+        vqe.compute_vqe_basis_state_overlaps(interleave_strings(detsa, hfdet), vqe.params) * t1signs
+    )
+    cis_b = (
+        vqe.compute_vqe_basis_state_overlaps(interleave_strings(hfdet, detsa), vqe.params) * t1signs
+    )
+    cis_a = cis_a.reshape(nocca, nvirta)
+    cis_b = cis_b.reshape(noccb, nvirtb)
+
+    cid_ab = vqe.compute_vqe_basis_state_overlaps(
+        interleave_strings(detsa, detsa), vqe.params
+    ).reshape(nocca * nvirta, noccb * nvirtb)
+    cid_ab = np.einsum("ij,i,j->ij", cid_ab, t1signs, t1signs)
+    cid_ab = cid_ab.reshape(nocca, nvirta, noccb, nvirtb).transpose(0, 2, 1, 3)
+
+    cid_aa = (
+        vqe.compute_vqe_basis_state_overlaps(interleave_strings(detsaa, hfdet), vqe.params)
+        * t2signs
+    )
+    cid_bb = (
+        vqe.compute_vqe_basis_state_overlaps(interleave_strings(hfdet, detsaa), vqe.params)
+        * t2signs
+    )
+
+    c0 = vqe.compute_vqe_basis_state_overlaps(interleave_strings(hfdet, hfdet), vqe.params)[0]
+    print(f"c0 = {c0:.8f}")
+    print(f"|c0|^2 = {c0**2:.8f}")
+    if np.abs(c0) < 1e-8:
+        raise ValueError("Coefficient of ref. determinant is too close to zero.")
+    return amplitudes_to_spinorb(c0, cis_a, cis_b, cid_aa, cid_ab, cid_bb)
+
+
 def remove_index_restriction_doubles(cid_aa, nocc, nvirt):
     # TODO: docs
     assert cid_aa.ndim == 1
@@ -160,4 +216,23 @@ def assert_spinorb_antisymmetric(t2):
             t2,
             s * t2.transpose(*p),
             err_msg=f"Tensor does not have correct antisymmetry. Permutation {p} failed.",
+            atol=1e-13,
+            rtol=0,
         )
+
+
+def interleave_strings(alphas, betas):
+    if not isinstance(alphas[0], (list, np.ndarray)):
+        alphas = [alphas]
+    if not isinstance(betas[0], (list, np.ndarray)):
+        betas = [betas]
+    ncas = len(alphas[0])
+    ret = []
+    for alpha in alphas:
+        for beta in betas:
+            cdet = np.zeros(2 * ncas, dtype=int)
+            cdet[::2] = alpha
+            cdet[1::2] = beta
+            interleaved_string = "".join(np.char.mod("%d", cdet))
+            ret.append(interleaved_string)
+    return ret

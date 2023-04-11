@@ -169,3 +169,20 @@ def test_amplitude_extraction_and_norms():
         np.testing.assert_allclose(c2norm, c2sq, atol=1e-7, rtol=0)
         np.testing.assert_allclose(t1norm, t1sq, atol=1e-7, rtol=0)
         np.testing.assert_allclose(t2norm, t2sq, atol=1e-7, rtol=0)
+
+
+@pytest.mark.parametrize(
+    "alphas, betas, expected",
+    [
+        ([[1, 1, 0, 0]], [[0, 0, 1, 1]], ["10100101"]),
+        ([1, 1, 0, 0], [0, 0, 1, 1], ["10100101"]),
+        ([[1, 0, 1], [0, 1, 0]], [[1, 0, 0]], ["110010", "011000"]),
+    ],
+)
+def test_interleave_strings(alphas, betas, expected):
+    from tailoredcc.amplitudes import interleave_strings
+
+    ret = interleave_strings(alphas, betas)
+    assert len(ret) == len(expected)
+    for r, ref in zip(ret, expected):
+        assert r == ref

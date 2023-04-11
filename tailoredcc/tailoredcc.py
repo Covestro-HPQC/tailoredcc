@@ -11,6 +11,7 @@ from .amplitudes import (
     assert_spinorb_antisymmetric,
     ci_to_cluster_amplitudes,
     extract_ci_singles_doubles_amplitudes_spinorb,
+    extract_vqe_singles_doubles_amplitudes_spinorb,
 )
 from .ccsd_equations import ccsd_energy, doubles_residual, singles_residual
 from .utils import spinorb_from_spatial
@@ -103,6 +104,22 @@ def tccsd_from_ci(mc):
     return tccsd(mc._scf, c_ia, c_ijab, occslice, virtslice)
 
 
+def tccsd_from_vqe(scfres, vqe):
+    # TODO: docs, type hints
+    nocca, noccb = vqe.nalpha, vqe.nbeta
+    assert nocca == noccb
+    ncas = vqe.nact
+    nvirta = ncas - nocca
+    nvirtb = ncas - noccb
+    assert nvirta == nvirtb
+
+    c_ia, c_ijab = extract_vqe_singles_doubles_amplitudes_spinorb(vqe)
+
+    occslice = slice(2 * vqe.nocc, 2 * vqe.nocc + nocca + noccb)
+    virtslice = slice(0, nvirta + nvirtb)
+    return tccsd(scfres, c_ia, c_ijab, occslice, virtslice)
+
+
 @dataclass
 class TCC:
     scfres: scf.HF
@@ -121,6 +138,7 @@ def tccsd(scfres, c_ia, c_ijab, occslice, virtslice):
     mol = scfres.mol
     # 1. convert to T amplitudes
     t1, t2 = ci_to_cluster_amplitudes(c_ia, c_ijab)
+    print("=> Amplitudes converted.")
 
     assert_spinorb_antisymmetric(t2)
     # 2. build CCSD prerequisites
@@ -143,12 +161,14 @@ def tccsd(scfres, c_ia, c_ijab, occslice, virtslice):
     # (canonical) Fock operator
     fock = soei + np.einsum("piqi->pq", eri_phys_asymm[:, o, :, o])
     hf_energy = 0.5 * np.einsum("ii", (fock + soei)[o, o])
+    print("=> Prerequisites built.")
 
     # 3. map T amplitudes to full MO space
     t1_mo = np.zeros((nocc, nvirt))
     t2_mo = np.zeros((nocc, nocc, nvirt, nvirt))
     t1_mo[occslice, virtslice] = t1
     t2_mo[occslice, occslice, virtslice, virtslice] = t2
+    print("=> T amplitudes mapped to full MO space.")
 
     assert_spinorb_antisymmetric(t2_mo)
 
