@@ -1,9 +1,10 @@
-from pyscf import scf, mcscf, cc, gto
-from tailoredcc import tccsd_from_ci
-import pandas as pd
-import numpy as np
-import seaborn as sns
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+from pyscf import cc, gto, mcscf, scf
+
+from tailoredcc import tccsd_from_ci
 
 ncas = 2
 nelecas = 2
@@ -23,14 +24,14 @@ def build_pes(r_hf, unit="Bohr", label=None):
         """,
         # symmetry=True,
         unit=unit,
-        basis="cc-pVDZ"
+        basis="cc-pVDZ",
     )
-    
+
     # mol = gto.M(
     #     atom=f"""
     #     F 0 0 0
     #     F 0 0 {r_hf}
-    #     """, 
+    #     """,
     #     unit=unit,
     #     basis="cc-pVDZ",
     #     # symmetry=True,
@@ -64,7 +65,7 @@ def build_pes(r_hf, unit="Bohr", label=None):
         swap = [2, 4]
         scfres.mo_coeff[:, swap[::-1]] = scfres.mo_coeff[:, swap]
         scfres.mo_energy[swap[::-1]] = scfres.mo_energy[swap]
-    
+
     # swap for F2
     # if label == "1.0":
     #     print("Swapping")
@@ -79,7 +80,7 @@ def build_pes(r_hf, unit="Bohr", label=None):
     #     swap = [6, 9]
     #     scfres.mo_coeff[:, swap[::-1]] = scfres.mo_coeff[:, swap]
     #     scfres.mo_energy[swap[::-1]] = scfres.mo_energy[swap]
-    
+
     # CASCI
     mc = mcscf.CASCI(scfres, nelecas=nelecas, ncas=ncas)
     mc.kernel()
@@ -91,7 +92,7 @@ def build_pes(r_hf, unit="Bohr", label=None):
     #     from pyscf.tools import cubegen
     #     for idx in range(0, mc.ncore + ncas + 6):
     #         cubegen.orbital(mol, outfile=f"cubes/orb_{label}_{idx}.cube", coeff=scfres.mo_coeff[:, idx])
-    
+
     # TCCSD
     tcc = tccsd_from_ci(mc)
     np.testing.assert_allclose(tcc.e_cas, mc.e_tot - scfres.e_tot, atol=1e-9, rtol=0)
@@ -100,11 +101,11 @@ def build_pes(r_hf, unit="Bohr", label=None):
     ref_bartlett = -76.24090
     diff = tcc.e_tot - ref_bartlett
     print("DIFF", diff)
-    
+
     # CCSD
     ccsd = cc.CCSD(scfres)
     ccsd.kernel()
-    
+
     # ref_ccsd = -100.22816
     ref_ccsd = -76.24008
     diff = ccsd.e_tot - ref_ccsd
@@ -113,7 +114,7 @@ def build_pes(r_hf, unit="Bohr", label=None):
     # CASSCF
     # mc_scf = mcscf.CASSCF(scfres, nelecas=nelecas, ncas=ncas)
     # mc_scf.kernel()
-    
+
     # TCCSD/CAS orbitals
     # tcc_scf = tccsd_from_ci(mc_scf)
 
@@ -124,8 +125,9 @@ def build_pes(r_hf, unit="Bohr", label=None):
         "ccsd": ccsd.e_tot,
         "tccsd": tcc.e_tot,
         # "tccsd_cas": tcc_scf.e_tot,
-        "r_hf": r_hf
+        "r_hf": r_hf,
     }
+
 
 df = pd.DataFrame()
 
@@ -157,7 +159,8 @@ for dist in np.linspace(r0, r1, sz):
 
 value_vars = [
     # "scf",
-    "casci", "ccsd",
+    "casci",
+    "ccsd",
     "tccsd",
     # "casscf", "tccsd_cas"
 ]
@@ -178,5 +181,5 @@ dfm.to_json("dissociation_melt.json")
 # ref value from 10.1063/1.4767900, Table I
 # TCCSD = 203.38 mH
 # CCSD = 222.55 mH
-np.testing.assert_allclose(df['tccsd'][1], 203.38 / 1e3, atol=1e-5, rtol=0) 
-np.testing.assert_allclose(df['ccsd'][1], 222.55 / 1e3, atol=1e-5, rtol=0) 
+np.testing.assert_allclose(df["tccsd"][1], 203.38 / 1e3, atol=1e-5, rtol=0)
+np.testing.assert_allclose(df["ccsd"][1], 222.55 / 1e3, atol=1e-5, rtol=0)

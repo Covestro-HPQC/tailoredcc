@@ -1,9 +1,9 @@
-from pyscf import gto, scf, mcscf
 import numpy as np
-from pyscf.fci import cistring
 from numpy import einsum
+from pyscf import gto, mcscf, scf
+from pyscf.fci import cistring
 
-from tailoredcc.ccsd_equations import singles_residual, doubles_residual, ccsd_energy
+from tailoredcc.ccsd_equations import ccsd_energy, doubles_residual, singles_residual
 
 
 def solve_tccsd(
@@ -102,7 +102,7 @@ def ccsd_energy_correlation(t1, t2, f, g, o, v):
     # energy = 1.0 * einsum('ii', f[o, o])
 
     # 	  1.0000 f(i,a)*t1(a,i)
-    energy += 1.0 * einsum('ia,ai', f[o, v], t1)
+    energy += 1.0 * einsum("ia,ai", f[o, v], t1)
 
     # #	 -0.5000 <j,i||j,i>
     # energy += -0.5 * einsum('jiji', g[o, o, o, o])
@@ -280,11 +280,11 @@ t1slice = (virtslice, occslice)
 t2slice = (virtslice, virtslice, occslice, occslice)
 
 
-from openfermionpyscf._run_pyscf import compute_integrals
 from openfermion.chem.molecular_data import spinorb_from_spatial
+from openfermionpyscf._run_pyscf import compute_integrals
 
-print('maxdiff', np.max(np.abs(m.mo_coeff- mc.mo_coeff)))
-print('energies', m.mo_energy, mc.mo_energy)
+print("maxdiff", np.max(np.abs(m.mo_coeff - mc.mo_coeff)))
+print("energies", m.mo_energy, mc.mo_energy)
 m.mo_coeff = mc.mo_coeff
 m.mo_energy = mc.mo_energy
 

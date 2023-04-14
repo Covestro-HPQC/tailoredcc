@@ -1,14 +1,13 @@
 # Proprietary and Confidential
 # Covestro Deutschland AG, 2023
 
+import numpy as np
+import pytest
+from pyscf import gto, mcscf, scf
 
-def test_cas_energy_crossref():
-    # TODO: refactor test...
-    import numpy as np
-    from pyscf import gto, mcscf, scf
 
-    from tailoredcc import tccsd_from_ci
-
+@pytest.fixture(scope="module")
+def scf_ci():
     mol = gto.Mole()
     mol.build(
         verbose=4,
@@ -32,17 +31,27 @@ def test_cas_energy_crossref():
     print(f"CAS({nelec}, {ncas})")
     mc = mcscf.CASCI(m, ncas, nelec)
     mc.kernel()
-    tcc = tccsd_from_ci(mc)
-    np.testing.assert_allclose(tcc.e_cas, mc.e_tot - m.e_tot, atol=1e-9, rtol=0)
-    np.testing.assert_allclose(tcc.e_tot, -14.41978908212513, atol=1e-9, rtol=0)
 
     ncas = 4
     nelec = 4
     print(f"CAS({nelec}, {ncas})")
-    mc = mcscf.CASCI(m, ncas, nelec)
-    mc.kernel()
-    tcc = tccsd_from_ci(mc)
+    mc2 = mcscf.CASCI(m, ncas, nelec)
+    mc2.kernel()
+
+    return m, mc, mc2
+
+
+@pytest.mark.parametrize("backend", ["adcc", "opt_einsum"])
+def test_cas_energy_crossref(backend, scf_ci):
+    from tailoredcc import tccsd_from_ci
+
+    m, mc, mc2 = scf_ci
+    tcc = tccsd_from_ci(mc, backend=backend)
     np.testing.assert_allclose(tcc.e_cas, mc.e_tot - m.e_tot, atol=1e-9, rtol=0)
+    np.testing.assert_allclose(tcc.e_tot, -14.41978908212513, atol=1e-9, rtol=0)
+
+    tcc = tccsd_from_ci(mc2, backend=backend)
+    np.testing.assert_allclose(tcc.e_cas, mc2.e_tot - m.e_tot, atol=1e-9, rtol=0)
 
     # TODO: not 100% correct...
     # print(f"CASSCF({nelec}, {ncas})")

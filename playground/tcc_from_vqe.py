@@ -1,9 +1,14 @@
-from covvqetools.instant_vqes import QNPVQE
 import covvqetools as cov
 import numpy as np
-from pyscf import gto, scf, mcscf, ao2mo
+from covvqetools.instant_vqes import QNPVQE
+from pyscf import ao2mo, gto, mcscf, scf
 from pyscf.ci.cisd import tn_addrs_signs
-from tailoredcc.amplitudes import detstrings_singles, detstrings_doubles, amplitudes_to_spinorb
+
+from tailoredcc.amplitudes import (
+    amplitudes_to_spinorb,
+    detstrings_doubles,
+    detstrings_singles,
+)
 from tailoredcc.tailoredcc import tccsd, tccsd_from_ci, tccsd_from_vqe
 
 conv_tol_e = 1e-12
@@ -45,10 +50,15 @@ measurement_method = cov.DoubleFactorized.with_kwargs(
 )
 
 # mol = gto.M(atom=str(xyzfile), basis=basis, verbose=4)
-mol = gto.M(atom="""
+mol = gto.M(
+    atom="""
 N 0 0 0
 N 0 0 3.5
-""", unit="bohr", basis=basis, verbose=4)
+""",
+    unit="bohr",
+    basis=basis,
+    verbose=4,
+)
 scfres = scf.RHF(mol)
 scfres.conv_tol = conv_tol_e
 scfres.conv_tol_grad = conv_tol_g
@@ -79,9 +89,12 @@ vqe = QNPVQE(
 opt = cov.LBFGSB(atol=1e-10, gtol=1e-10, ftol=None)
 
 iter = 0
+
+
 def callback(*args):
     print(iter)
     iter += 1
+
 
 vqe.vqe_optimize(opt=opt, maxiter=maxiter_vqe)
 energy_vqe = vqe.vqe_energy(vqe.params)
@@ -126,7 +139,9 @@ for det in detsa:
         cdet[::2] = det
         cdet[1::2] = det2
         dets_ab.append("".join([str(w) for w in cdet]))
-cid_ab_overlap = vqe.compute_vqe_basis_state_overlaps(dets_ab, vqe.params).reshape(nocca*nvirta, noccb*nvirtb)
+cid_ab_overlap = vqe.compute_vqe_basis_state_overlaps(dets_ab, vqe.params).reshape(
+    nocca * nvirta, noccb * nvirtb
+)
 cid_ab_overlap = np.einsum("ij,i,j->ij", cid_ab_overlap, t1signs, t1signs)
 cid_ab_overlap = cid_ab_overlap.reshape(nocca, nvirta, noccb, nvirtb).transpose(0, 2, 1, 3)
 
@@ -154,7 +169,9 @@ hf[1::2] = hfdet
 hf = "".join([str(w) for w in hf])
 c0 = vqe.compute_vqe_basis_state_overlaps([hf], vqe.params)[0]
 print("c0", c0)
-c_ia, c_ijab = amplitudes_to_spinorb(c0, cis_a_overlap, cis_b_overlap, cid_aa_overlap, cid_ab_overlap, cid_bb_overlap)
+c_ia, c_ijab = amplitudes_to_spinorb(
+    c0, cis_a_overlap, cis_b_overlap, cid_aa_overlap, cid_ab_overlap, cid_bb_overlap
+)
 
 occslice = slice(2 * mci.ncore, 2 * mci.ncore + nocca + noccb)
 virtslice = slice(0, nvirta + nvirtb)
