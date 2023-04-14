@@ -16,3 +16,26 @@ def spinorb_from_spatial(oei, tei):
     eri_of[::2, 1::2, 1::2, ::2] = tei  # <ab|ba>
     eri_of[1::2, ::2, ::2, 1::2] = tei  # <ba|ab>
     return soei, eri_of
+
+
+def spin_blocks_interleaved_to_sequential(tensor):
+    ret = np.zeros_like(tensor)
+    ndim = tensor.ndim
+    alpha_il = slice(0, None, 2)
+    beta_il = slice(1, None, 2)
+    lookup = {
+        "alpha": alpha_il,
+        "beta": beta_il,
+    }
+    from itertools import product
+
+    for comb in product(["alpha", "beta"], repeat=ndim):
+        take = tuple(lookup[c] for c in comb)
+        view = tensor[take]
+        slices = []
+        for i, k in enumerate(comb):
+            start = tensor.shape[i] - view.shape[i] if k == "beta" else 0
+            stop = view.shape[i] if k == "alpha" else None
+            slices.append(slice(start, stop))
+        ret[tuple(slices)] = view
+    return ret

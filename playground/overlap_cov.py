@@ -1,8 +1,9 @@
 import covvqetools as cov
-from pyscf import gto, scf, mcscf
 import numpy as np
 import pennylane as qml
-from tailoredcc.amplitudes import detstrings_singles, detstrings_doubles
+from pyscf import gto, mcscf, scf
+
+from tailoredcc.amplitudes import detstrings_doubles, detstrings_singles
 
 
 def assert_allclose_signfix(actual, desired, atol=0, **kwargs):
@@ -19,6 +20,7 @@ def normalize_sign(*items, atol=0):
     """
     Normalise the sign of a list of numpy arrays
     """
+
     def sign(item):
         flat = np.ravel(item)
         flat = flat[np.abs(flat) > atol]
@@ -26,6 +28,7 @@ def normalize_sign(*items, atol=0):
             return 1
         else:
             return np.sign(flat[0])
+
     desired_sign = sign(items[0])
     return tuple(desired_sign / sign(item) * item for item in items)
 
@@ -78,9 +81,7 @@ mc = mcscf.CASCI(m, ncas, nelec)
 mc.kernel()
 
 
-state = cov.pyscf.extract_state_dict(
-    mc.fcisolver, mc.ci, ncas, nocca, noccb, amplitude_cutoff=1e-8
-)
+state = cov.pyscf.extract_state_dict(mc.fcisolver, mc.ci, ncas, nocca, noccb, amplitude_cutoff=1e-8)
 print("extraction done")
 
 from pyscf.ci.cisd import tn_addrs_signs
@@ -89,6 +90,7 @@ t1addrs, t1signs = tn_addrs_signs(ncas, nocca, 1)
 t2addrs, t2signs = tn_addrs_signs(ncas, nocca, 2)
 
 from pathlib import Path
+
 cifile = f"fcivec_{nelec}_{ncas}.npy"
 if Path(cifile).is_file():
     print("Loading CI vector from disk")
@@ -165,7 +167,9 @@ for det in detsa:
         cdet[1::2] = det2
         dets_ab.append("".join([str(w) for w in cdet]))
 det_arr = np.array([int(str(slater_det_int), 2) for slater_det_int in dets_ab])
-cid_ab_overlap = compute_overlap_with_dets(statevec, det_arr).reshape(nocca*nvirta, noccb*nvirtb)
+cid_ab_overlap = compute_overlap_with_dets(statevec, det_arr).reshape(
+    nocca * nvirta, noccb * nvirtb
+)
 cid_ab_overlap = np.einsum("ij,i,j->ij", cid_ab_overlap, t1signs, t1signs)
 cid_ab_overlap = cid_ab_overlap.reshape(nocca, nvirta, noccb, nvirtb).transpose(0, 2, 1, 3)
 

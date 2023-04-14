@@ -1,6 +1,7 @@
-from pyscf import gto, scf, mcscf
-from tailoredcc import tccsd_from_ci
 import numpy as np
+from pyscf import gto, mcscf, scf
+
+from tailoredcc import tccsd_from_ci
 
 mol = gto.Mole()
 mol.build(

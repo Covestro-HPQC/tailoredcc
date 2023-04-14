@@ -1,7 +1,7 @@
 import numpy as np
-from scipy.special import comb
 from pyscf.ci.cisd import tn_addrs_signs
 from pyscf.fci import cistring
+from scipy.special import comb
 
 ncas = 20
 nocc = 15
@@ -23,7 +23,7 @@ def str2addr(norb, nelec, string):
     for norb_left in range(norb_left, -1, -1):
         if nelec_left == 0 or norb_left < nelec_left:
             break
-        elif (1 << norb_left & string):
+        elif 1 << norb_left & string:
             addr += comb(norb_left, nelec_left, exact=True)
             nelec_left -= 1
     return addr

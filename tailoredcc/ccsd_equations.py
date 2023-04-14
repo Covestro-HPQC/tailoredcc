@@ -2,7 +2,6 @@
 # Covestro Deutschland AG, 2023
 
 # from numpy import einsum
-# from jax.numpy import einsum
 from opt_einsum import contract
 
 
