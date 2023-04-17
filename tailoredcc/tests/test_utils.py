@@ -4,7 +4,11 @@
 import numpy as np
 import pytest
 
-from tailoredcc.utils import spin_blocks_interleaved_to_sequential, spinorb_from_spatial
+from tailoredcc.utils import (
+    spin_blocks_interleaved_to_sequential,
+    spin_blocks_sequential_to_interleaved,
+    spinorb_from_spatial,
+)
 
 
 @pytest.mark.parametrize("nsp", [5, 10, 20, 30])
@@ -60,13 +64,18 @@ def test_spin_blocks_interleaved_to_sequential_even_dim(ndim, nalpha, nbeta):
         sequential = aseq[tuple(seq)]
         np.testing.assert_equal(interleaved, sequential)
 
+    n_per_dim = [{"alpha": nalpha, "beta": nbeta} for _ in range(ndim)]
+    np.testing.assert_equal(a, spin_blocks_sequential_to_interleaved(aseq, n_per_dim))
+
 
 def test_spin_blocks_interleaved_to_sequential_uneven_dim():
     nocc = 20
     nocca = nocc // 2
+    noccb = nocca
 
     nvirt = 40
     nvirta = nvirt // 2
+    nvirtb = nvirta
 
     N = nocc**2 * nvirt**2
     a = np.arange(N).reshape((nocc, nocc, nvirt, nvirt))
@@ -97,3 +106,11 @@ def test_spin_blocks_interleaved_to_sequential_uneven_dim():
         interleaved = a[tuple(il)]
         sequential = aseq[tuple(seq)]
         np.testing.assert_equal(interleaved, sequential)
+
+    n_per_dim = [
+        {"alpha": nocca, "beta": noccb},
+        {"alpha": nocca, "beta": noccb},
+        {"alpha": nvirta, "beta": nvirtb},
+        {"alpha": nvirta, "beta": nvirtb},
+    ]
+    np.testing.assert_equal(a, spin_blocks_sequential_to_interleaved(aseq, n_per_dim))

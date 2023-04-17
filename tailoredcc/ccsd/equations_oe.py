@@ -1,7 +1,6 @@
 # Proprietary and Confidential
 # Covestro Deutschland AG, 2023
 
-# from numpy import einsum
 from opt_einsum import contract
 
 
@@ -10,7 +9,7 @@ def einsum(*args, **kwargs):
     return contract(*args, **kwargs)
 
 
-def ccsd_energy_correlation(t1, t2, f, g, o, v):
+def ccsd_energy_correlation_oe(t1, t2, f, g, o, v):
     """
     < 0 | e(-T) H e(T) | 0> :
     :param f:
@@ -42,7 +41,7 @@ def ccsd_energy_correlation(t1, t2, f, g, o, v):
     return energy
 
 
-def ccsd_energy(t1, t2, f, g, o, v):
+def ccsd_energy_oe(t1, t2, f, g, o, v):
     """
     < 0 | e(-T) H e(T) | 0> :
     :param f:
@@ -73,7 +72,7 @@ def ccsd_energy(t1, t2, f, g, o, v):
     return energy
 
 
-def singles_residual(t1, t2, f, g, o, v):
+def singles_residual_oe(t1, t2, f, g, o, v):
     """
     < 0 | m* e e(-T) H e(T) | 0>
     :param f:
@@ -147,7 +146,7 @@ def singles_residual(t1, t2, f, g, o, v):
     return singles_res
 
 
-def doubles_residual(t1, t2, f, g, o, v):
+def doubles_residual_oe(t1, t2, f, g, o, v):
     """
      < 0 | m* n* f e e(-T) H e(T) | 0>
     :param f:
