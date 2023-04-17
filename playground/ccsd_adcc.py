@@ -2,8 +2,8 @@ import adcc
 import numpy as np
 from pyscf import ao2mo, cc, gto, lib, mcscf, scf
 
-from tailoredcc.ccsd import ccsd_energy_correlation_adcc
-from tailoredcc.tailoredcc import solve_tccsd_adcc, tccsd, tccsd_from_ci, tccsd_from_vqe
+# from tailoredcc.ccsd import ccsd_energy_correlation_adcc
+from tailoredcc.tailoredcc import solve_tccsd, tccsd_from_ci
 
 nthreads = 8
 adcc.set_n_threads(nthreads)
@@ -31,8 +31,8 @@ noccb = nbeta
 
 assert nocca == noccb
 # basis = "cc-pvdz"
-basis = "sto-3g"
-# basis = "6-31g"
+# basis = "sto-3g"
+basis = "6-31g"
 
 mol = gto.M(atom=str(xyzfile), basis=basis, verbose=4)
 # mol = gto.M(atom="""
@@ -56,7 +56,8 @@ mp = adcc.LazyMp(hf)
 # print(diag.pphh.describe_symmetry())
 
 print(hf.energy_scf - mol.energy_nuc())
-# t = solve_tccsd_adcc(mp, diis_size=7)
+t = solve_tccsd(mp, diis_size=7, backend="libcc")
+t = solve_tccsd(mp, diis_size=7, backend="adcc")
 # ecorr = ccsd_energy_correlation_adcc(mp, t)
 # print(ecorr)
 # ccsd = cc.CCSD(scfres).run()
@@ -64,9 +65,9 @@ print(hf.energy_scf - mol.energy_nuc())
 # run pyscf CASCI and generate integrals to start with
 mci = mcscf.CASCI(scfres, nact, (nalpha, nbeta))
 mci.kernel()
-ret_ci = tccsd_from_ci(mci)
-
-ret_ci = tccsd_from_ci(mci, backend="opt_einsum")
+ret_ci = tccsd_from_ci(mci, backend="libcc")
+ret_ci = tccsd_from_ci(mci, backend="adcc")
+ret_ci = tccsd_from_ci(mci, backend="oe")
 # occslice = slice(2 * mci.ncore, 2 * mci.ncore + nocca + noccb)
 # virtslice = slice(0, nvirta + nvirtb)
 

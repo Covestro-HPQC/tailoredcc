@@ -41,7 +41,7 @@ def scf_ci():
     return m, mc, mc2
 
 
-@pytest.mark.parametrize("backend", ["adcc", "opt_einsum"])
+@pytest.mark.parametrize("backend", ["libcc", "adcc", "oe"])
 def test_cas_energy_crossref(backend, scf_ci):
     from tailoredcc import tccsd_from_ci
 

@@ -39,3 +39,28 @@ def spin_blocks_interleaved_to_sequential(tensor):
             slices.append(slice(start, stop))
         ret[tuple(slices)] = view
     return ret
+
+
+def spin_blocks_sequential_to_interleaved(tensor, n_per_dim):
+    ret = np.zeros_like(tensor)
+    ndim = tensor.ndim
+    assert len(n_per_dim) == ndim
+    alpha_il = slice(0, None, 2)
+    beta_il = slice(1, None, 2)
+    lookup = {
+        "alpha": alpha_il,
+        "beta": beta_il,
+    }
+
+    from itertools import product
+
+    for comb in product(["alpha", "beta"], repeat=ndim):
+        take = tuple(lookup[c] for c in comb)
+        slices = []
+        for i, k in enumerate(comb):
+            offset = 0 if k == "alpha" else n_per_dim[i]["alpha"]
+            start = offset
+            stop = offset + n_per_dim[i][k]
+            slices.append(slice(start, stop))
+        ret[take] = tensor[tuple(slices)]
+    return ret

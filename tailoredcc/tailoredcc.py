@@ -2,6 +2,7 @@
 # Covestro Deutschland AG, 2023
 
 import time
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
@@ -14,11 +15,10 @@ from .amplitudes import (
     extract_ci_singles_doubles_amplitudes_spinorb,
     extract_vqe_singles_doubles_amplitudes_spinorb,
 )
-from .ccsd_equations import ccsd_energy, doubles_residual, singles_residual
 from .utils import spin_blocks_interleaved_to_sequential, spinorb_from_spatial
 
 
-def solve_tccsd(
+def _solve_tccsd_oe(
     t1,
     t2,
     fock,
@@ -46,12 +46,14 @@ def solve_tccsd(
         t1_dim = t1.size
         old_vec = np.hstack((t1.flatten(), t2.flatten()))
 
-    old_energy = ccsd_energy(t1, t2, fock, g, o, v)
+    from .ccsd import oe as cc
+
+    old_energy = cc.ccsd_energy(t1, t2, fock, g, o, v)
     print(f"\tInitial CCSD energy: {old_energy}")
     for idx in range(max_iter):
         start = time.time()
-        singles_res = singles_residual(t1, t2, fock, g, o, v)
-        doubles_res = doubles_residual(t1, t2, fock, g, o, v)
+        singles_res = cc.singles_residual(t1, t2, fock, g, o, v)
+        doubles_res = cc.doubles_residual(t1, t2, fock, g, o, v)
 
         # set the CAS-only residual to zero
         singles_res[t1slice] = 0.0
@@ -69,7 +71,7 @@ def solve_tccsd(
             new_doubles = new_vectorized_iterate[t1_dim:].reshape(t2.shape)
             old_vec = new_vectorized_iterate
 
-        current_energy = ccsd_energy(new_singles, new_doubles, fock, g, o, v)
+        current_energy = cc.ccsd_energy(new_singles, new_doubles, fock, g, o, v)
         delta_e = np.abs(old_energy - current_energy)
 
         if delta_e < stopping_eps:
@@ -79,7 +81,6 @@ def solve_tccsd(
             t1 = new_singles
             t2 = new_doubles
             old_energy = current_energy
-            # print("\tIteration {: 5d}\t{: 5.15f}\t{: 5.15f}".format(idx, old_energy, delta_e))
             print(
                 "\tIteration {: 5d}\t{: 5.15f}\t{: 5.15f}\t{: 5.3f}s".format(
                     idx, old_energy, delta_e, time.time() - start
@@ -103,19 +104,7 @@ def zero_slices(singles_res, doubles_res, occslice, virtslice):
     doubles_res.set_from_ndarray(doubles, 1e-12)
 
 
-def symmetrize_generic_doubles(invec, mospaces):
-    scratch = invec.antisymmetrise([(2, 3)])
-    scratch = scratch.symmetrise([(0, 1), (2, 3)])
-
-    # import libadcc
-    # symm = libadcc.make_symmetry_eri(mospaces, "o1o1v1v1")
-    # x = libadcc.Tensor(symm)
-    # x.set_from_ndarray(scratch.to_ndarray(), 1e-14)
-    # print(x.describe_symmetry())
-    return scratch
-
-
-def solve_tccsd_adcc(
+def solve_tccsd(
     mp,
     occslice=None,
     virtslice=None,
@@ -124,6 +113,7 @@ def solve_tccsd_adcc(
     stopping_eps=1.0e-8,
     diis_size=7,
     diis_start_cycle=4,
+    backend="libcc",
 ):
     freeze_amplitude_slices = False
     if occslice is not None and virtslice is not None:
@@ -132,7 +122,10 @@ def solve_tccsd_adcc(
     import adcc
     from adcc.functions import direct_sum
 
-    from .ccsd import ccsd_energy_adcc, doubles_residual_adcc, singles_residual_adcc
+    from .ccsd import DISPATCH
+
+    cc = DISPATCH[backend]
+    print(f"Using '{backend}' residual equations.")
 
     hf = mp.reference_state
     e_ia = direct_sum("+i-a->ia", hf.foo.diagonal(), hf.fvv.diagonal())
@@ -147,30 +140,31 @@ def solve_tccsd_adcc(
         .symmetrise((0, 1))
         .symmetrise((2, 3))
     )
-    # print(e_ijab.describe_symmetry())
-    # print(mp.t2oo.describe_symmetry())
 
-    # make t1/t2 with zeros
     if tguess is None:
-        t = adcc.AmplitudeVector(ov=e_ia.zeros_like(), oovv=mp.t2oo.zeros_like())
+        t = adcc.AmplitudeVector(ov=mp.mp2_diffdm.ov, oovv=mp.t2oo)
     else:
         t = tguess
 
-    # initialize diis if diis_size is not None
-    # else normal iterate
     if diis_size is not None:
         from .diis import DIIS
 
         diis_update = DIIS(diis_size, start_iter=diis_start_cycle)
         old_vec = t
 
-    old_energy = ccsd_energy_adcc(mp, t)
+    old_energy = cc.ccsd_energy(mp, t)
     print(f"\tInitial CCSD energy: {old_energy}")
+    fmt = "{:>10d}{:>24.15f}{:>15.3e}{:>15.3e}{:>20.6f}"
+    # print header for CCSD iterations
+    print(
+        "\t{:>10s}{:>24s}{:>15s}{:>15s}{:>20s}".format(
+            "Iteration", "Energy [Eh]", "Delta E [Eh]", "|r|", "time/iteration (s)"
+        )
+    )
     for idx in range(max_iter):
         start = time.time()
-        singles_res = singles_residual_adcc(mp, t)
-        doubles_res = doubles_residual_adcc(mp, t)
-        # TODO: the spin symmetry gets broken in doubles residual
+        singles_res = cc.singles_residual(mp, t)
+        doubles_res = cc.doubles_residual(mp, t)
 
         # set the CAS-only residual to zero
         if freeze_amplitude_slices:
@@ -180,6 +174,7 @@ def solve_tccsd_adcc(
         new_doubles = t.oovv + doubles_res / e_ijab
         new_t = adcc.AmplitudeVector(ov=new_singles, oovv=new_doubles)
         # print(new_t.oovv.describe_symmetry())
+        # rnorm = np.sqrt(singles_res.dot(singles_res) + doubles_res.dot(doubles_res))
 
         # diis update
         if diis_size is not None:
@@ -191,7 +186,9 @@ def solve_tccsd_adcc(
             new_t = new_vectorized_iterate
             old_vec = new_vectorized_iterate
 
-        current_energy = ccsd_energy_adcc(mp, new_t)
+        diff = new_t - t
+        rnorm = np.sqrt(diff.dot(diff))
+        current_energy = cc.ccsd_energy(mp, new_t)
         delta_e = np.abs(old_energy - current_energy)
 
         if delta_e < stopping_eps:
@@ -200,17 +197,13 @@ def solve_tccsd_adcc(
         else:
             t = new_t
             old_energy = current_energy
-            print(
-                "\tIteration {: 5d}\t{: 5.15f}\t{: 5.15f}\t{: 5.3f}s".format(
-                    idx, old_energy, delta_e, time.time() - start
-                )
-            )
+            print("\t" + fmt.format(idx, old_energy, delta_e, rnorm, time.time() - start))
     else:
         print("Did not converge.")
         return new_t
 
 
-def tccsd_from_ci(mc, backend="adcc"):
+def tccsd_from_ci(mc, backend="libcc"):
     # TODO: docs
     nocca, noccb = mc.nelecas
     assert nocca == noccb
@@ -227,7 +220,7 @@ def tccsd_from_ci(mc, backend="adcc"):
 
     assert isinstance(mc.ncore, int)
 
-    if backend == "adcc":
+    if backend in ["adcc", "libcc"]:
         occaslice = np.arange(mc.ncore, mc.ncore + nocca, 1)
         occbslice = np.arange(2 * mc.ncore + nocca, 2 * mc.ncore + nocca + noccb)
         virtaslice = np.arange(0, nvirta, 1)
@@ -237,11 +230,11 @@ def tccsd_from_ci(mc, backend="adcc"):
         virtbslice = np.arange(nvirta + nvir, nvirta + nvir + nvirtb, 1)
         occslice = np.concatenate((occaslice, occbslice), axis=0)
         virtslice = np.concatenate((virtaslice, virtbslice), axis=0)
-        return tccsd(mc._scf, c_ia, c_ijab, occslice, virtslice)
-    elif backend == "opt_einsum":
+        return tccsd(mc._scf, c_ia, c_ijab, occslice, virtslice, backend)
+    elif backend == "oe":
         occslice = slice(2 * mc.ncore, 2 * mc.ncore + nocca + noccb)
         virtslice = slice(0, nvirta + nvirtb)
-        return tccsd_opt_einsum(mc._scf, c_ia, c_ijab, occslice, virtslice)
+        return _tccsd_opt_einsum(mc._scf, c_ia, c_ijab, occslice, virtslice)
     else:
         raise NotImplementedError()
 
@@ -276,7 +269,7 @@ class TCC:
         return self.e_hf + self.e_corr
 
 
-def tccsd(scfres, c_ia, c_ijab, occslice, virtslice):
+def tccsd(scfres, c_ia, c_ijab, occslice, virtslice, backend="libcc"):
     # 1. convert to T amplitudes
     t1, t2 = ci_to_cluster_amplitudes(c_ia, c_ijab)
     t1 = spin_blocks_interleaved_to_sequential(t1)
@@ -289,6 +282,10 @@ def tccsd(scfres, c_ia, c_ijab, occslice, virtslice):
     nvirt = 2 * mol.nao_nr() - nocc
 
     import adcc
+
+    from .ccsd import DISPATCH
+
+    cc = DISPATCH[backend]
 
     hf = adcc.ReferenceState(scfres)
     hf_energy = hf.energy_scf
@@ -307,17 +304,15 @@ def tccsd(scfres, c_ia, c_ijab, occslice, virtslice):
 
     assert_spinorb_antisymmetric(t2_mo)
 
-    from .ccsd import ccsd_energy_correlation_adcc
-
     tguess = adcc.AmplitudeVector(ov=hf.fov.zeros_like(), oovv=mp.t2oo.zeros_like())
     tguess.ov.set_from_ndarray(t1_mo, 1e-12)
     tguess.oovv.set_from_ndarray(t2_mo, 1e-12)
 
-    e_cas = ccsd_energy_correlation_adcc(mp, tguess)
+    e_cas = cc.ccsd_energy_correlation(mp, tguess)
     print(f"CCSD correlation energy from CI amplitudes {e_cas:>12}")
 
     # solve tccsd amplitude equations
-    t = solve_tccsd_adcc(mp, occslice, virtslice, tguess, diis_size=8)
+    t = solve_tccsd(mp, occslice, virtslice, tguess, backend=backend, diis_size=8)
     t1f = t.ov
     t2f = t.oovv
     # test that the T_CAS amplitudes are still intact
@@ -325,7 +320,7 @@ def tccsd(scfres, c_ia, c_ijab, occslice, virtslice):
     np.testing.assert_allclose(t2, t2f.to_ndarray()[t2slice], atol=1e-12, rtol=0)
 
     # compute correlation/total TCCSD energy
-    e_tcc = ccsd_energy_correlation_adcc(mp, t)
+    e_tcc = cc.ccsd_energy_correlation(mp, t)
 
     ret = TCC(scfres, t1f, t2f, hf_energy, e_cas, e_tcc)
     print(
@@ -337,7 +332,11 @@ def tccsd(scfres, c_ia, c_ijab, occslice, virtslice):
     return ret
 
 
-def tccsd_opt_einsum(scfres, c_ia, c_ijab, occslice, virtslice):
+def _tccsd_opt_einsum(scfres, c_ia, c_ijab, occslice, virtslice):
+    warnings.warn(
+        "This implementation based on opt_einsum is just a reference"
+        " code and should not be used for production calculations."
+    )
     mol = scfres.mol
     # 1. convert to T amplitudes
     t1, t2 = ci_to_cluster_amplitudes(c_ia, c_ijab)
@@ -375,15 +374,15 @@ def tccsd_opt_einsum(scfres, c_ia, c_ijab, occslice, virtslice):
 
     assert_spinorb_antisymmetric(t2_mo)
 
-    from .ccsd_equations import ccsd_energy_correlation
+    from .ccsd import oe as cc
 
-    e_cas = ccsd_energy_correlation(
+    e_cas = cc.ccsd_energy_correlation(
         t1_mo.T, t2_mo.transpose(2, 3, 0, 1), fock, eri_phys_asymm, o, v
     )
     print(f"CCSD correlation energy from CI amplitudes {e_cas:>12}")
 
     # solve tccsd amplitude equations
-    t1f, t2f = solve_tccsd(
+    t1f, t2f = _solve_tccsd_oe(
         t1_mo.T,
         t2_mo.transpose(2, 3, 0, 1),
         fock,
@@ -403,7 +402,7 @@ def tccsd_opt_einsum(scfres, c_ia, c_ijab, occslice, virtslice):
     np.testing.assert_allclose(t2.transpose(2, 3, 0, 1), t2f[t2slice], atol=1e-14, rtol=0)
 
     # compute correlation/total TCCSD energy
-    e_tcc = ccsd_energy_correlation(t1f, t2f, fock, eri_phys_asymm, o, v)  # - hf_energy
+    e_tcc = cc.ccsd_energy_correlation(t1f, t2f, fock, eri_phys_asymm, o, v)  # - hf_energy
 
     ret = TCC(scfres, t1f, t2f, hf_energy + mol.energy_nuc(), e_cas, e_tcc)
     print(
