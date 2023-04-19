@@ -8,6 +8,7 @@ from adcc import block as b
 from pyscf import cc, gto, scf
 
 from tailoredcc import ccsd
+from tailoredcc.ccsd.equations_adcc import CCSDIntermediates
 from tailoredcc.tailoredcc import solve_tccsd
 from tailoredcc.utils import (
     spin_blocks_interleaved_to_sequential,
@@ -62,11 +63,13 @@ def test_residual_crossref(scfres_mp):
 
     t = adcc.AmplitudeVector(ov=mp.mp2_diffdm.ov, oovv=mp.t2oo)
 
+    im = CCSDIntermediates(mp, t)
+
     sres_adcc = ccsd.adcc.singles_residual(mp, t).to_ndarray()
-    sres_libcc = ccsd.libcc.singles_residual(mp, t).to_ndarray()
+    sres_libcc = ccsd.libcc.singles_residual(mp, t, im).to_ndarray()
 
     dres_adcc = ccsd.adcc.doubles_residual(mp, t).to_ndarray()
-    dres_libcc = ccsd.libcc.doubles_residual(mp, t).to_ndarray()
+    dres_libcc = ccsd.libcc.doubles_residual(mp, t, im).to_ndarray()
 
     np.testing.assert_allclose(sres_libcc, sres_adcc, atol=1e-12, rtol=0)
     np.testing.assert_allclose(dres_libcc, dres_adcc, atol=1e-12, rtol=0)
