@@ -30,6 +30,7 @@ def scf_ci():
 
     print(f"CAS({nelec}, {ncas})")
     mc = mcscf.CASCI(m, ncas, nelec)
+    mc.fcisolver.conv_tol = 1e-12
     mc.kernel()
 
     ncas = 4
@@ -41,7 +42,7 @@ def scf_ci():
     return m, mc, mc2
 
 
-@pytest.mark.parametrize("backend", ["libcc", "adcc", "oe"])
+@pytest.mark.parametrize("backend", ["pyscf", "libcc", "adcc", "oe"])
 def test_cas_energy_crossref(backend, scf_ci):
     from tailoredcc import tccsd_from_ci
 

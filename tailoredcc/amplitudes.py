@@ -1,7 +1,7 @@
 # Proprietary and Confidential
 # Covestro Deutschland AG, 2023
 import numpy as np
-from pyscf.cc.addons import spatial2spin
+from pyscf.cc.addons import spatial2spin, spin2spatial
 from pyscf.ci.cisd import tn_addrs_signs
 
 
@@ -25,6 +25,8 @@ def extract_ci_singles_doubles_amplitudes_spinorb(mc):
     t1addrs, t1signs = tn_addrs_signs(ncas, nocca, 1)
     t2addrs, t2signs = tn_addrs_signs(ncas, nocca, 2)
 
+    if isinstance(mc.ci, (list, tuple)):
+        raise NotImplementedError("Cannot handle CI with multiple roots.")
     fcivec = mc.ci
     # CIS includes two types of amplitudes: alpha -> alpha and beta -> beta
     cis_a = t1signs * fcivec[t1addrs, 0]
@@ -236,3 +238,37 @@ def interleave_strings(alphas, betas):
             interleaved_string = "".join(np.char.mod("%d", cdet))
             ret.append(interleaved_string)
     return ret
+
+
+def set_cas_amplitudes_spatial_from_spinorb(
+    t1, t2, t1cas, t2cas, t1slice, t2slice, zero_input=False
+):
+    # TODO: docs
+    t1spin = spatial2spin(t1)
+    t2spin = spatial2spin(t2)
+
+    if zero_input:
+        # zero out the input amplitudes and only write t1cas/t2cas to the full array
+        t1spin[...] = 0.0
+        t2spin[...] = 0.0
+    # write CAS amplitudes to slice
+    t1spin[t1slice] = t1cas
+    t2spin[t2slice] = t2cas
+
+    if isinstance(t1, np.ndarray) and t1.ndim == 2:
+        nocca, nvirta = t1.shape
+        orbspin = np.zeros((nocca + nvirta) * 2, dtype=int)
+        orbspin[1::2] = 1
+        t1a, _ = spin2spatial(t1spin, orbspin)
+        _, t2ab, _ = spin2spatial(t2spin, orbspin)
+        t1spatial = t1a
+        t2spatial = t2ab
+    elif isinstance(t1, tuple) and len(t1) == 2:
+        nocca, nvirta = t1[0].shape
+        orbspin = np.zeros((nocca + nvirta) * 2, dtype=int)
+        orbspin[1::2] = 1
+        t1spatial = spin2spatial(t1spin, orbspin)
+        t2spatial = spin2spatial(t2spin, orbspin)
+    else:
+        raise NotImplementedError("Unknown amplitude types.")
+    return t1spatial, t2spatial

@@ -1,6 +1,8 @@
 # Proprietary and Confidential
 # Covestro Deutschland AG, 2023
 
+from functools import cached_property
+
 import libadcc
 from adcc.functions import einsum
 
@@ -121,16 +123,16 @@ def doubles_residual_adcc(mp, t):
     return t2new.evaluate()
 
 
-def singles_residual_libcc(mp, t):
+def singles_residual_libcc(mp, t, im):
     # adapted from libcc, http://iopenshell.usc.edu/downloads/tensor/,
     # see also Table V of Levchenko and Krylov, J. Chem. Phys. 120, 175 (2004)
     hf = mp.reference_state
     t1 = t.ov
     t2 = t.oovv
 
-    f2ov = ccsd_f2ov(mp, t)
-    f3oo = ccsd_f3oo(mp, t, f2ov)
-    f1vv = ccsd_f1vv(mp, t)
+    f2ov = im.f2ov
+    f3oo = im.f3oo
+    f1vv = im.f1vv
 
     t1new = (
         +1.0 * hf.fov
@@ -144,58 +146,21 @@ def singles_residual_libcc(mp, t):
     return t1new.evaluate()
 
 
-def ccsd_f3oo(mp, t, f2ov):
-    hf = mp.reference_state
-    t1 = t.ov
-    t2 = t.oovv
-
-    f3oo = (
-        +1.0 * hf.foo
-        + 1.0 * einsum("kc,ic->ki", f2ov, t1)
-        + 0.5 * einsum("kjab,ijab->ki", hf.oovv, t2)
-        + 1.0 * einsum("klic,lc->ki", hf.ooov, t1)
-    )
-    return f3oo.evaluate()
-
-
-def ccsd_f2ov(mp, t):
-    hf = mp.reference_state
-    t1 = t.ov
-
-    f2ov = +1.0 * hf.fov + 1.0 * einsum("jb,ijab->ia", t1, hf.oovv)
-    return f2ov.evaluate()
-
-
-def ccsd_f1vv(mp, t):
-    hf = mp.reference_state
-    t1 = t.ov
-    t2 = t.oovv
-
-    f1vv = (
-        +1.0 * hf.fvv
-        - 0.5 * einsum("klcd,klbd->bc", hf.oovv, t2)
-        + 1.0 * einsum("kbdc,kd->bc", hf.ovvv, t1)
-    )
-    return f1vv.evaluate()
-
-
-def doubles_residual_libcc(mp, t):
+def doubles_residual_libcc(mp, t, im):
     # adapted from libcc, http://iopenshell.usc.edu/downloads/tensor/,
     # see also Table V of Levchenko and Krylov, J. Chem. Phys. 120, 175 (2004)
     hf = mp.reference_state
     t1 = t.ov
     t2 = t.oovv
 
-    f2oo = ccsd_f2oo(mp, t)
+    f2oo = im.f2oo
+    f2vv = im.f2vv
 
-    f1vv = ccsd_f1vv(mp, t)
-    f2vv = ccsd_f2vv(mp, t, f1vv)
+    tt_oovv = im.tt_oovv
+    i4_oooo = im.i4_oooo
 
-    tt_oovv = ccsd_tt_oovv(t)
-    i4_oooo = ccsd_i4_oooo(mp, t, tt_oovv)
-
-    i2a_ooov = ccsd_i2a_ooov(mp, t, i4_oooo, tt_oovv)
-    i1a_ovov = ccsd_i1a_ovov(mp, t)
+    i2a_ooov = im.i2a_ooov
+    i1a_ovov = im.i1a_ovov
 
     t2new = (
         +1.0 * hf.oovv
@@ -217,77 +182,119 @@ def doubles_residual_libcc(mp, t):
     return t2new.evaluate()
 
 
-def ccsd_f2oo(mp, t):
-    hf = mp.reference_state
-    t1 = t.ov
-    t2 = t.oovv
+class CCSDIntermediates:
+    def __init__(self, mp, t):
+        self.mp = mp
+        self.t = t
+        self.hf = self.mp.reference_state
 
-    f2oo = (
-        +1.0 * hf.foo
-        + 1.0 * einsum("ja,ia->ij", hf.fov, t1)
-        + 1.0 * einsum("jkia,ka->ij", hf.ooov, t1)
-        + 1.0 * einsum("jkab,ia,kb->ij", hf.oovv, t1, t1)
-        + 0.5 * einsum("jkab,ikab->ij", hf.oovv, t2)
-    )
-    return f2oo.evaluate()
+    @cached_property
+    def f3oo(self):
+        hf = self.hf
+        t1 = self.t.ov
+        t2 = self.t.oovv
 
+        f3oo = (
+            +1.0 * hf.foo
+            + 1.0 * einsum("kc,ic->ki", self.f2ov, t1)
+            + 0.5 * einsum("kjab,ijab->ki", hf.oovv, t2)
+            + 1.0 * einsum("klic,lc->ki", hf.ooov, t1)
+        )
+        return f3oo.evaluate()
 
-def ccsd_f2vv(mp, t, f1vv):
-    hf = mp.reference_state
-    t1 = t.ov
+    @cached_property
+    def f2ov(self):
+        hf = self.hf
+        t1 = self.t.ov
 
-    f2vv = (
-        +1.0 * f1vv
-        - 1.0 * einsum("kc,kb->bc", hf.fov, t1)
-        - 1.0 * einsum("klcd,kb,ld->bc", hf.oovv, t1, t1)
-    )
-    return f2vv.evaluate()
+        f2ov = +1.0 * hf.fov + 1.0 * einsum("jb,ijab->ia", t1, hf.oovv)
+        return f2ov.evaluate()
 
+    @cached_property
+    def f1vv(self):
+        hf = self.hf
+        t1 = self.t.ov
+        t2 = self.t.oovv
 
-def ccsd_i1a_ovov(mp, t):
-    hf = mp.reference_state
-    t1 = t.ov
-    t2 = t.oovv
+        f1vv = (
+            +1.0 * hf.fvv
+            - 0.5 * einsum("klcd,klbd->bc", hf.oovv, t2)
+            + 1.0 * einsum("kbdc,kd->bc", hf.ovvv, t1)
+        )
+        return f1vv.evaluate()
 
-    i1a_ovov = (
-        +1.0 * hf.ovov
-        - 1.0 * einsum("iabc,jc->iajb", hf.ovvv, t1)
-        - 1.0 * einsum("ikjb,ka->iajb", hf.ooov, t1)
-        - 0.5 * einsum("jkca,ikcb->iajb", t2 + 2.0 * einsum("jc,ka->jkca", t1, t1), hf.oovv)
-    )
-    return i1a_ovov.evaluate()
+    @cached_property
+    def f2oo(self):
+        hf = self.hf
+        t1 = self.t.ov
+        t2 = self.t.oovv
 
+        f2oo = (
+            +1.0 * hf.foo
+            + 1.0 * einsum("ja,ia->ij", hf.fov, t1)
+            + 1.0 * einsum("jkia,ka->ij", hf.ooov, t1)
+            + 1.0 * einsum("jkab,ia,kb->ij", hf.oovv, t1, t1)
+            + 0.5 * einsum("jkab,ikab->ij", hf.oovv, t2)
+        )
+        return f2oo.evaluate()
 
-def ccsd_i2a_ooov(mp, t, i4_oooo, tt_oovv):
-    hf = mp.reference_state
-    t1 = t.ov
+    @cached_property
+    def f2vv(self):
+        hf = self.hf
+        t1 = self.t.ov
 
-    i2a_ooov = (
-        +1.0 * hf.ooov
-        - 0.5 * einsum("ijkl,lb->ijkb", i4_oooo, t1)
-        + 0.5 * einsum("ijcd,kbcd->ijkb", tt_oovv, hf.ovvv)
-        + 1.0 * 2.0 * einsum("kbic,jc->ijkb", hf.ovov, t1).antisymmetrise(0, 1)
-    )
-    return i2a_ooov.evaluate()
+        f2vv = (
+            +1.0 * self.f1vv
+            - 1.0 * einsum("kc,kb->bc", hf.fov, t1)
+            - 1.0 * einsum("klcd,kb,ld->bc", hf.oovv, t1, t1)
+        )
+        return f2vv.evaluate()
 
+    @cached_property
+    def i1a_ovov(self):
+        hf = self.hf
+        t1 = self.t.ov
+        t2 = self.t.oovv
 
-def ccsd_i4_oooo(mp, t, tt_oovv):
-    hf = mp.reference_state
-    t1 = t.ov
+        i1a_ovov = (
+            +1.0 * hf.ovov
+            - 1.0 * einsum("iabc,jc->iajb", hf.ovvv, t1)
+            - 1.0 * einsum("ikjb,ka->iajb", hf.ooov, t1)
+            - 0.5 * einsum("jkca,ikcb->iajb", t2 + 2.0 * einsum("jc,ka->jkca", t1, t1), hf.oovv)
+        )
+        return i1a_ovov.evaluate()
 
-    i4_oooo = (
-        +1.0 * hf.oooo
-        + 0.5 * einsum("klab,ijab->ijkl", hf.oovv, tt_oovv)
-        + 1.0 * 2.0 * einsum("klia,ja->ijkl", hf.ooov, t1).antisymmetrise(0, 1)
-    )
-    return i4_oooo.evaluate()
+    @cached_property
+    def i2a_ooov(self):
+        hf = self.hf
+        t1 = self.t.ov
 
+        i2a_ooov = (
+            +1.0 * hf.ooov
+            - 0.5 * einsum("ijkl,lb->ijkb", self.i4_oooo, t1)
+            + 0.5 * einsum("ijcd,kbcd->ijkb", self.tt_oovv, hf.ovvv)
+            + 1.0 * 2.0 * einsum("kbic,jc->ijkb", hf.ovov, t1).antisymmetrise(0, 1)
+        )
+        return i2a_ooov.evaluate()
 
-def ccsd_tt_oovv(t):
-    t1 = t.ov
-    t2 = t.oovv
+    @cached_property
+    def i4_oooo(self):
+        hf = self.hf
+        t1 = self.t.ov
 
-    tt_oovv = t2 + 4.0 * einsum("ia,jb->ijab", 0.5 * t1, t1).antisymmetrise(0, 1).antisymmetrise(
-        2, 3
-    )
-    return tt_oovv.evaluate()
+        i4_oooo = (
+            +1.0 * hf.oooo
+            + 0.5 * einsum("klab,ijab->ijkl", hf.oovv, self.tt_oovv)
+            + 1.0 * 2.0 * einsum("klia,ja->ijkl", hf.ooov, t1).antisymmetrise(0, 1)
+        )
+        return i4_oooo.evaluate()
+
+    @cached_property
+    def tt_oovv(self):
+        t1 = self.t.ov
+        t2 = self.t.oovv
+
+        tt_oovv = t2 + 4.0 * einsum("ia,jb->ijab", 0.5 * t1, t1).antisymmetrise(
+            0, 1
+        ).antisymmetrise(2, 3)
+        return tt_oovv.evaluate()

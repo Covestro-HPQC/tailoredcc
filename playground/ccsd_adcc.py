@@ -3,7 +3,8 @@ import numpy as np
 from pyscf import ao2mo, cc, gto, lib, mcscf, scf
 
 # from tailoredcc.ccsd import ccsd_energy_correlation_adcc
-from tailoredcc.tailoredcc import solve_tccsd, tccsd_from_ci
+from tailoredcc import tccsd_from_ci
+from tailoredcc.solve_tcc import solve_tccsd
 
 nthreads = 8
 adcc.set_n_threads(nthreads)
