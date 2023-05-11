@@ -32,8 +32,8 @@ class DIIS:
         :param start_vecs: optional (default=4) number to start DIIS iterations
         """
         self.nvecs = num_diis_vecs
-        self.error_vecs = []
-        self.prev_vecs = []
+        self.error_vecs: list = []
+        self.prev_vecs: list = []
         self.start_iter = start_iter
         self.iter_idx = 0
 

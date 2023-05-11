@@ -110,3 +110,5 @@ ENV/
 
 #
 *.npy
+tmp*
+*.py,cover
