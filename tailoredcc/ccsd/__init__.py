@@ -2,16 +2,17 @@
 # Covestro Deutschland AG, 2023
 
 from dataclasses import dataclass
+from typing import Callable
 
 from . import equations_adcc, equations_oe
 
 
 @dataclass
 class CCSDDispatch:
-    ccsd_energy: callable
-    ccsd_energy_correlation: callable
-    singles_residual: callable
-    doubles_residual: callable
+    ccsd_energy: Callable
+    ccsd_energy_correlation: Callable
+    singles_residual: Callable
+    doubles_residual: Callable
 
 
 DISPATCH = {

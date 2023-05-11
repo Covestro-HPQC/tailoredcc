@@ -1,11 +1,16 @@
 # Proprietary and Confidential
 # Covestro Deutschland AG, 2023
+from typing import Tuple, Union
+
+import covvqetools as cov
 import numpy as np
+import numpy.typing as npt
+from pyscf import mcscf
 from pyscf.cc.addons import spatial2spin, spin2spatial
 from pyscf.ci.cisd import tn_addrs_signs
 
 
-def extract_ci_singles_doubles_amplitudes_spinorb(mc):
+def extract_ci_singles_doubles_amplitudes_spinorb(mc: mcscf.casci.CASCI):
     # TODO: docs
     # NOTE: adapted from https://github.com/pyscf/pyscf/blob/master/examples/ci/20-from_fci.py
     # NOTE: of uses alpha_1, beta_1, alpha_2, beta_2, ... MO ordering
@@ -60,7 +65,11 @@ def extract_ci_singles_doubles_amplitudes_spinorb(mc):
     return amplitudes_to_spinorb(c0, cis_a, cis_b, cid_aa, cid_ab, cid_bb)
 
 
-def extract_vqe_singles_doubles_amplitudes_spinorb(vqe):
+def extract_vqe_singles_doubles_amplitudes_spinorb(vqe: cov.vqe.ActiveSpaceChemistryVQE):
+    if not hasattr(vqe, "compute_vqe_basis_state_overlaps"):
+        raise NotImplementedError(
+            "Given VQE cannot compute overlap with " "computational basis states."
+        )
     # TODO: docs
     # NOTE: of uses alpha_1, beta_1, alpha_2, beta_2, ... MO ordering
     # (aka interleaved qubit ordering),
@@ -109,14 +118,15 @@ def extract_vqe_singles_doubles_amplitudes_spinorb(vqe):
     )
 
     c0 = vqe.compute_vqe_basis_state_overlaps(interleave_strings(hfdet, hfdet), vqe.params)[0]
+    # TODO: replace with proper logging
     print(f"c0 = {c0:.8f}")
     print(f"|c0|^2 = {c0**2:.8f}")
     if np.abs(c0) < 1e-8:
-        raise ValueError("Coefficient of ref. determinant is too close to zero.")
+        raise ValueError("Coefficient of reference determinant is too close to zero.")
     return amplitudes_to_spinorb(c0, cis_a, cis_b, cid_aa, cid_ab, cid_bb)
 
 
-def remove_index_restriction_doubles(cid_aa, nocc, nvirt):
+def remove_index_restriction_doubles(cid_aa: npt.NDArray, nocc: int, nvirt: int):
     # TODO: docs
     assert cid_aa.ndim == 1
     assert cid_aa.size == nocc * (nocc - 1) // 2 * nvirt * (nvirt - 1) // 2
@@ -135,7 +145,14 @@ def remove_index_restriction_doubles(cid_aa, nocc, nvirt):
     return cid_aa_full
 
 
-def amplitudes_to_spinorb(c0, cis_a, cis_b, cid_aa, cid_ab, cid_bb):
+def amplitudes_to_spinorb(
+    c0: float,
+    cis_a: npt.NDArray,
+    cis_b: npt.NDArray,
+    cid_aa: npt.NDArray,
+    cid_ab: npt.NDArray,
+    cid_bb: npt.NDArray,
+):
     # TODO: docs
     nocca, nvirta = cis_a.shape
     noccb, nvirtb = cis_b.shape
@@ -154,7 +171,7 @@ def amplitudes_to_spinorb(c0, cis_a, cis_b, cid_aa, cid_ab, cid_bb):
     return c_ia, c_ijab
 
 
-def ci_to_cluster_amplitudes(c_ia, c_ijab):
+def ci_to_cluster_amplitudes(c_ia: npt.NDArray, c_ijab: npt.NDArray):
     # TODO: docs
     assert_spinorb_antisymmetric(c_ijab)
     t1 = c_ia.copy()
@@ -162,8 +179,12 @@ def ci_to_cluster_amplitudes(c_ia, c_ijab):
     return t1, t2
 
 
-def detstrings_singles(nocc, nvirt):
+def detstrings_singles(nocc: int, nvirt: int):
     # TODO: docs
+    if nocc <= 0:
+        raise ValueError("Cannot build determinant with 0 occupied orbitals.")
+    if nvirt <= 0:
+        raise ValueError("Cannot build determinant with 0 virtual orbitals.")
     ncas = nocc + nvirt
     detstrings = []
     detstrings_np = []
@@ -181,8 +202,12 @@ def detstrings_singles(nocc, nvirt):
     return detstrings, detstrings_np
 
 
-def detstrings_doubles(nocc, nvirt):
+def detstrings_doubles(nocc: int, nvirt: int):
     # TODO: docs
+    if nocc <= 0:
+        raise ValueError("Cannot build determinant with 0 occupied orbitals.")
+    if nvirt <= 0:
+        raise ValueError("Cannot build determinant with 0 virtual orbitals.")
     ncas = nocc + nvirt
     detstrings = []
     detstrings_np = []
@@ -204,7 +229,7 @@ def detstrings_doubles(nocc, nvirt):
     return detstrings, detstrings_np
 
 
-def assert_spinorb_antisymmetric(t2):
+def assert_spinorb_antisymmetric(t2: npt.NDArray):
     if t2.ndim != 4:
         raise ValueError(f"Tensor must have 4 dimensions, got {t2.ndim}.")
     perm_sign = [
@@ -223,7 +248,7 @@ def assert_spinorb_antisymmetric(t2):
         )
 
 
-def interleave_strings(alphas, betas):
+def interleave_strings(alphas: Union[list, npt.NDArray], betas: Union[list, npt.NDArray]):
     if not isinstance(alphas[0], (list, np.ndarray)):
         alphas = [alphas]
     if not isinstance(betas[0], (list, np.ndarray)):
@@ -241,7 +266,13 @@ def interleave_strings(alphas, betas):
 
 
 def set_cas_amplitudes_spatial_from_spinorb(
-    t1, t2, t1cas, t2cas, t1slice, t2slice, zero_input=False
+    t1: npt.NDArray,
+    t2: npt.NDArray,
+    t1cas: npt.NDArray,
+    t2cas: npt.NDArray,
+    t1slice: Tuple[slice, slice],
+    t2slice: Tuple[slice, slice, slice, slice],
+    zero_input=False,
 ):
     # TODO: docs
     t1spin = spatial2spin(t1)
@@ -272,3 +303,21 @@ def set_cas_amplitudes_spatial_from_spinorb(
     else:
         raise NotImplementedError("Unknown amplitude types.")
     return t1spatial, t2spatial
+
+
+def prepare_cas_slices(
+    nocca: int, noccb: int, nvirta: int, nvirtb: int, ncore: int, nvir: int, backend: str
+):
+    if backend in ["adcc", "libcc"]:
+        occaslice = np.arange(ncore, ncore + nocca, 1)
+        occbslice = np.arange(2 * ncore + nocca, 2 * ncore + nocca + noccb)
+        virtaslice = np.arange(0, nvirta, 1)
+        virtbslice = np.arange(nvirta + nvir, nvirta + nvir + nvirtb, 1)
+        occslice = np.concatenate((occaslice, occbslice), axis=0)
+        virtslice = np.concatenate((virtaslice, virtbslice), axis=0)
+    elif backend in ["oe", "pyscf"]:
+        occslice = slice(2 * ncore, 2 * ncore + nocca + noccb)
+        virtslice = slice(0, nvirta + nvirtb)
+    else:
+        raise NotImplementedError(f"No CAS slices implemented for backend {backend}.")
+    return occslice, virtslice

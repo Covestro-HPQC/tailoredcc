@@ -94,7 +94,7 @@ def build_pes(r_hf, unit="Bohr", label=None):
     #         cubegen.orbital(mol, outfile=f"cubes/orb_{label}_{idx}.cube", coeff=scfres.mo_coeff[:, idx])
 
     # TCCSD
-    tcc = tccsd_from_ci(mc)
+    tcc = tccsd_from_ci(mc, backend="pyscf")
     np.testing.assert_allclose(tcc.e_cas, mc.e_tot - scfres.e_tot, atol=1e-9, rtol=0)
 
     # ref_bartlett = -100.22884
@@ -152,10 +152,13 @@ unit = "Angstrom"
 
 sz = 2
 
+data = []
 for dist in np.linspace(r0, r1, sz):
     print(dist)
     ret = build_pes(dist, unit=unit, label=f"{dist / r0}")
-    df = df.append(ret, ignore_index=True)
+    data.append(ret)
+
+df = pd.DataFrame(data=data)
 
 value_vars = [
     # "scf",

@@ -23,6 +23,10 @@ dependencies = [
     "numpy <1.24",
     "scipy",
     "pyscf",
+    "openfermion",
+    "openfermion_pyscf",
+    "opt_einsum",
+    "covvqetools @ git+ssh://git@gitlab.ssh.covestro.com/quantum-computing/covvqetools@master",
 ]
 
 # Update the urls once the hosting is set up.
@@ -33,7 +37,8 @@ dependencies = [
 [project.optional-dependencies]
 test = [
   "pytest>=6.1.2",
-  "pytest-runner"
+  "pytest-runner",
+  "mypy",
 ]
 
 [tool.setuptools]

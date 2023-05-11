@@ -3,9 +3,13 @@
 
 import warnings
 from dataclasses import dataclass
+from functools import partial
+from typing import Any, Callable, Dict
 
+import covvqetools as cov
 import numpy as np
-from pyscf import scf
+import numpy.typing as npt
+from pyscf import mcscf, scf
 from pyscf.cc.addons import spatial2spin
 
 from .amplitudes import (
@@ -13,19 +17,24 @@ from .amplitudes import (
     ci_to_cluster_amplitudes,
     extract_ci_singles_doubles_amplitudes_spinorb,
     extract_vqe_singles_doubles_amplitudes_spinorb,
+    prepare_cas_slices,
     set_cas_amplitudes_spatial_from_spinorb,
 )
 from .solve_tcc import _solve_tccsd_oe, solve_tccsd
 from .utils import spin_blocks_interleaved_to_sequential, spinorb_from_spatial
 
 
-def tccsd_from_ci(mc, backend="libcc"):
+def tccsd_from_ci(mc: mcscf.casci.CASCI, backend="pyscf", **kwargs) -> Any:
     # TODO: docs
     nocca, noccb = mc.nelecas
     assert nocca == noccb
     nvirta = mc.ncas - nocca
     nvirtb = mc.ncas - noccb
     assert nvirta == nvirtb
+    assert isinstance(mc.ncore, int)
+    ncore = mc.ncore
+    ncas = mc.ncas
+    nvir = mc.mo_coeff.shape[1] - ncore - ncas
 
     c_ia, c_ijab = extract_ci_singles_doubles_amplitudes_spinorb(mc)
 
@@ -34,32 +43,13 @@ def tccsd_from_ci(mc, backend="libcc"):
         # mc._scf.mo_coeff = mc.mo_coeff
         # mc._scf.mo_energy = mc.mo_energy
 
-    assert isinstance(mc.ncore, int)
-
-    if backend in ["adcc", "libcc"]:
-        occaslice = np.arange(mc.ncore, mc.ncore + nocca, 1)
-        occbslice = np.arange(2 * mc.ncore + nocca, 2 * mc.ncore + nocca + noccb)
-        virtaslice = np.arange(0, nvirta, 1)
-        ncore = mc.ncore
-        ncas = mc.ncas
-        nvir = mc.mo_coeff.shape[1] - ncore - ncas
-        virtbslice = np.arange(nvirta + nvir, nvirta + nvir + nvirtb, 1)
-        occslice = np.concatenate((occaslice, occbslice), axis=0)
-        virtslice = np.concatenate((virtaslice, virtbslice), axis=0)
-        return tccsd(mc._scf, c_ia, c_ijab, occslice, virtslice, backend=backend)
-    elif backend == "oe":
-        occslice = slice(2 * mc.ncore, 2 * mc.ncore + nocca + noccb)
-        virtslice = slice(0, nvirta + nvirtb)
-        return _tccsd_opt_einsum(mc._scf, c_ia, c_ijab, occslice, virtslice)
-    elif backend == "pyscf":
-        occslice = slice(2 * mc.ncore, 2 * mc.ncore + nocca + noccb)
-        virtslice = slice(0, nvirta + nvirtb)
-        return tccsd_pyscf(mc._scf, c_ia, c_ijab, occslice, virtslice)
-    else:
-        raise NotImplementedError()
+    occslice, virtslice = prepare_cas_slices(nocca, noccb, nvirta, nvirtb, ncore, nvir, backend)
+    return _tccsd_map[backend](mc._scf, c_ia, c_ijab, occslice, virtslice, **kwargs)
 
 
-def tccsd_from_vqe(scfres, vqe, backend="oe"):
+def tccsd_from_vqe(
+    scfres: scf.hf.SCF, vqe: cov.vqe.ActiveSpaceChemistryVQE, backend="pyscf", **kwargs
+):
     # TODO: docs, type hints
     nocca, noccb = vqe.nalpha, vqe.nbeta
     assert nocca == noccb
@@ -67,18 +57,26 @@ def tccsd_from_vqe(scfres, vqe, backend="oe"):
     nvirta = ncas - nocca
     nvirtb = ncas - noccb
     assert nvirta == nvirtb
-
-    if backend != "oe":
-        raise NotImplementedError(f"TCC from VQE not implemented for backend {backend}.")
+    ncore = vqe.nocc
+    if ncore == 0 and (nocca + noccb) != sum(scfres.mol.nelec):
+        raise ValueError("The active space needs to contain all electrons if ncore=0.")
+    ncas = vqe.nact
+    nvir = scfres.mo_coeff.shape[1] - ncore - ncas
 
     c_ia, c_ijab = extract_vqe_singles_doubles_amplitudes_spinorb(vqe)
 
-    occslice = slice(2 * vqe.nocc, 2 * vqe.nocc + nocca + noccb)
-    virtslice = slice(0, nvirta + nvirtb)
-    return tccsd(scfres, c_ia, c_ijab, occslice, virtslice, backend=backend)
+    occslice, virtslice = prepare_cas_slices(nocca, noccb, nvirta, nvirtb, ncore, nvir, backend)
+    return _tccsd_map[backend](scfres, c_ia, c_ijab, occslice, virtslice, **kwargs)
 
 
-def tccsd_pyscf(scfres, c_ia, c_ijab, occslice, virtslice):
+def tccsd_pyscf(
+    scfres: scf.hf.SCF,
+    c_ia: npt.NDArray,
+    c_ijab: npt.NDArray,
+    occslice: slice,
+    virtslice: slice,
+    **kwargs,
+):
     # TODO: docs, hints
     # 1. convert to T amplitudes
     t1cas, t2cas = ci_to_cluster_amplitudes(c_ia, c_ijab)
@@ -90,6 +88,9 @@ def tccsd_pyscf(scfres, c_ia, c_ijab, occslice, virtslice):
     # TODO: provide MO coefficients (e.g., from CASSCF)
     # TODO: UCCSD
     ccsd = cc.CCSD(scfres)
+    ccsd.max_cycle = kwargs.get("maxiter", ccsd.max_cycle)
+    # ccsd.conv_tol = 1e-10
+    # ccsd.conv_tol_normt = 1e-8
     update_amps = ccsd.update_amps
 
     t1slice = (occslice, virtslice)
@@ -128,9 +129,9 @@ def tccsd_pyscf(scfres, c_ia, c_ijab, occslice, virtslice):
 
 @dataclass
 class TCC:
-    scfres: scf.HF
-    t1: np.ndarray
-    t2: np.ndarray
+    scfres: scf.hf.SCF
+    t1: npt.NDArray
+    t2: npt.NDArray
     e_hf: float
     e_cas: float
     e_corr: float
@@ -140,7 +141,16 @@ class TCC:
         return self.e_hf + self.e_corr
 
 
-def tccsd(scfres, c_ia, c_ijab, occslice, virtslice, backend="libcc"):
+def tccsd(
+    scfres: scf.hf.SCF,
+    c_ia: npt.NDArray,
+    c_ijab: npt.NDArray,
+    occslice: npt.NDArray,
+    virtslice: npt.NDArray,
+    backend="libcc",
+    **kwargs,
+):
+    warnings.warn("TCC CAS energy using adcc is sometimes wrong if based on VQE.")
     # 1. convert to T amplitudes
     t1, t2 = ci_to_cluster_amplitudes(c_ia, c_ijab)
     t1 = spin_blocks_interleaved_to_sequential(t1)
@@ -194,16 +204,17 @@ def tccsd(scfres, c_ia, c_ijab, occslice, virtslice, backend="libcc"):
     e_tcc = cc.ccsd_energy_correlation(mp, t)
 
     ret = TCC(scfres, t1f, t2f, hf_energy, e_cas, e_tcc)
-    print(
-        f"E(TCCSD)= {ret.e_tot:.10f}",
-        f"E_corr = {e_tcc:.10f}",
-        # f"E_ext = {e_ext:.10f}",
-        f"E_cas = {e_cas:.10f}",
-    )
     return ret
 
 
-def _tccsd_opt_einsum(scfres, c_ia, c_ijab, occslice, virtslice):
+def _tccsd_opt_einsum(
+    scfres: scf.hf.SCF,
+    c_ia: npt.NDArray,
+    c_ijab: npt.NDArray,
+    occslice: slice,
+    virtslice: slice,
+    **kwargs,
+):
     warnings.warn(
         "This implementation based on opt_einsum is just a reference"
         " code and should not be used for production calculations."
@@ -278,10 +289,12 @@ def _tccsd_opt_einsum(scfres, c_ia, c_ijab, occslice, virtslice):
     e_tcc = cc.ccsd_energy_correlation(t1f, t2f, fock, eri_phys_asymm, o, v)  # - hf_energy
 
     ret = TCC(scfres, t1f, t2f, hf_energy + mol.energy_nuc(), e_cas, e_tcc)
-    print(
-        f"E(TCCSD)= {ret.e_tot:.10f}",
-        f"E_corr = {e_tcc:.10f}",
-        # f"E_ext = {e_ext:.10f}",
-        f"E_cas = {e_cas:.10f}",
-    )
     return ret
+
+
+_tccsd_map: Dict[str, Callable] = {
+    "adcc": partial(tccsd, backend="adcc"),
+    "libcc": partial(tccsd, backend="libcc"),
+    "oe": _tccsd_opt_einsum,
+    "pyscf": tccsd_pyscf,
+}
