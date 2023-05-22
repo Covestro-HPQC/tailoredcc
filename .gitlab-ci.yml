@@ -1,0 +1,33 @@
+before_script:
+  - eval "$(micromamba shell hook --shell=bash)"
+
+test:
+  stage: test
+  tags:
+    - "k8s"
+  script:
+    - micromamba config list
+    - micromamba env create -f conda_env.yml
+    - micromamba activate gitlab-ci
+    # set cert for git and pip
+    - git config --global http.sslCAinfo /home/mambauser/gitlab.covestro.com.crt
+    - pip config set global.cert /home/mambauser/gitlab.covestro.com.crt
+    # manually install pkgs from COV quantum computing software stack
+    - pip install git+https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.covestro.com/quantum-computing/covvqetools -v
+    # NOTE: parsec needs OpenBLAS, but adcc & friends need MKL
+    # - pip install git+https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.covestro.com/quantum-computing/parsec -v
+    - pip install pyscf openfermion openfermionpyscf
+    # install pkg
+    - pip install -e . -v --no-deps
+    # run pytest (NOTE without VQE for now because parsec is missing)
+    - pytest tailoredcc -v --cov tailoredcc -k "not vqe"
+
+lint:
+  stage: test
+  tags:
+    - "k8s"
+  script:
+    - micromamba create -n lint ruff isort -c conda-forge
+    - micromamba activate lint
+    - isort -c tailoredcc
+    - ruff tailoredcc

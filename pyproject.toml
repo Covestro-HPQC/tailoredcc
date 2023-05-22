@@ -24,7 +24,7 @@ dependencies = [
     "scipy",
     "pyscf",
     "openfermion",
-    "openfermion_pyscf",
+    "openfermionpyscf",
     "opt_einsum",
     "covvqetools @ git+ssh://git@gitlab.ssh.covestro.com/quantum-computing/covvqetools@master",
 ]
