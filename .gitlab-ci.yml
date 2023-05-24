@@ -3,6 +3,10 @@ before_script:
 
 test:
   stage: test
+  only:
+    - main
+    - merge_requests
+    - web
   tags:
     - "k8s"
   script:
@@ -20,10 +24,15 @@ test:
     # install pkg
     - pip install -e . -v --no-deps
     # run pytest (NOTE without VQE for now because parsec is missing)
+    - export OMP_NUM_THREADS=1
     - pytest tailoredcc -v --cov tailoredcc -k "not vqe"
 
 lint:
   stage: test
+  only:
+    - main
+    - merge_requests
+    - web
   tags:
     - "k8s"
   script:
