@@ -7,8 +7,6 @@ test:
     - main
     - merge_requests
     - web
-  tags:
-    - k8s
   script:
     - micromamba config list
     - micromamba env create -f conda_env.yml
@@ -30,8 +28,6 @@ lint:
     - main
     - merge_requests
     - web
-  tags:
-    - k8s
   script:
     - micromamba create -n lint ruff isort -c conda-forge
     - micromamba activate lint
