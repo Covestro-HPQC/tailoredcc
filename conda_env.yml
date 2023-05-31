@@ -5,16 +5,22 @@ dependencies:
   # Build
   - git
   - openssh
-  - libblas =*=*mkl
+  - libblas =*=*mkl  # for adcc & friends
   - python =3.9
   - pip
   - adcc
+  # parsec build deps
+  - cxx-compiler
+  - make
+  - openblas
+  - pybind11
   # Run
   - numpy <1.24
   - scipy >=1.2
   - opt_einsum >=3.0
-  # - openfermion
-  # - openfermionpyscf
+  - pyscf
+  - openfermion
+  - openfermionpyscf
   # Tests
   - pytest
   - pytest-cov

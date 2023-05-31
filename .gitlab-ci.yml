@@ -14,13 +14,13 @@ test:
     # manually install pkgs from COV quantum computing software stack
     - pip install git+https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.covestro.com/quantum-computing/covvqetools -v
     # NOTE: parsec needs OpenBLAS, but adcc & friends need MKL
-    # - pip install git+https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.covestro.com/quantum-computing/parsec -v
-    - pip install pyscf openfermion openfermionpyscf
+    - export OPENBLAS_LIB=${CONDA_PREFIX}/lib/libopenblas.so
+    - pip install git+https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.covestro.com/quantum-computing/parsec -v
     # install pkg
     - pip install -e . -v --no-deps
     # run pytest (NOTE without VQE for now because parsec is missing)
     - export OMP_NUM_THREADS=1
-    - pytest tailoredcc -v --cov tailoredcc -k "not vqe"
+    - pytest tailoredcc -v --cov tailoredcc
 
 lint:
   stage: test
