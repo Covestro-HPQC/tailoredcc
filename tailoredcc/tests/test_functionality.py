@@ -140,3 +140,16 @@ def test_tccsd_from_vqe_crossref(backend, scf_casci_vqe):
 
     np.testing.assert_allclose(ret_ci.e_cas, ret_vqe.e_cas, atol=1e-9, rtol=0)
     np.testing.assert_allclose(ret_ci.e_tot, ret_vqe.e_tot, atol=1e-9, rtol=0)
+
+
+def test_tccsd_with_triples_correction(scf_ci):
+    m, mc, mc2 = scf_ci
+    tcc = tccsd_from_ci(mc, backend="pyscf", triples_correction=True)
+    np.testing.assert_allclose(tcc.e_cas, mc.e_tot - m.e_tot, atol=1e-9, rtol=0)
+    np.testing.assert_allclose(tcc.e_tot, -14.41978908212513, atol=1e-9, rtol=0)
+    # no external amplitudes, so no triples correction
+    assert tcc.e_triples == 0.0
+
+    tcc = tccsd_from_ci(mc2, backend="pyscf", triples_correction=True)
+    np.testing.assert_allclose(tcc.e_cas, mc2.e_tot - m.e_tot, atol=1e-9, rtol=0)
+    assert np.abs(tcc.e_triples) > 1e-8
