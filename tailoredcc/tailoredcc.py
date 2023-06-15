@@ -89,6 +89,7 @@ def tccsd_pyscf(
     # TODO: UCCSD
     ccsd = cc.CCSD(scfres)
     ccsd.max_cycle = kwargs.get("maxiter", ccsd.max_cycle)
+    ccsd.verbose = 4
     # ccsd.conv_tol = 1e-10
     # ccsd.conv_tol_normt = 1e-8
     update_amps = ccsd.update_amps
@@ -123,6 +124,25 @@ def tccsd_pyscf(
     )
     e_cas = ccsd.energy(t1cas_spatial, t2cas_spatial)
     ccsd.e_cas = e_cas
+
+    if kwargs.get("triples_correction", False):
+        # TCCSD(T) triples correction only considers external
+        # amplitudes (i.e., completely active amplitudes are excluded)
+        # according to 10.1016/j.cplett.2010.11.058, p. 168
+        t1cas_zero = t1cas.copy()
+        t2cas_zero = t2cas.copy()
+        t1cas_zero[...] = 0.0
+        t2cas_zero[...] = 0.0
+        t1ext_spatial, t2ext_spatial = set_cas_amplitudes_spatial_from_spinorb(
+            ccsd.t1, ccsd.t2, t1cas_zero, t2cas_zero, t1slice, t2slice, zero_input=False
+        )
+        # check that all active amplitudes are zero
+        t1spin = spatial2spin(t1ext_spatial)
+        t2spin = spatial2spin(t2ext_spatial)
+        assert np.all(t1spin[t1slice] == 0.0)
+        assert np.all(t2spin[t2slice] == 0.0)
+        e_triples = ccsd.ccsd_t(t1=t1ext_spatial, t2=t2ext_spatial)
+        ccsd.e_triples = e_triples
 
     return ccsd
 
