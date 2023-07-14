@@ -1,21 +1,30 @@
 # Proprietary and Confidential
 # Covestro Deutschland AG, 2023
 
+import tempfile
+from itertools import permutations, product
+from shutil import which
+
 import numpy as np
 import pytest
 from pyscf.ci.cisd import tn_addrs_signs
 from pyscf.fci import cistring
+from tqdm import tqdm
 
 from tailoredcc.amplitudes import (
     amplitudes_to_spinorb,
     assert_spinorb_antisymmetric,
+    check_amplitudes_spinorb,
     ci_to_cluster_amplitudes,
+    compute_parity,
     detstrings_doubles,
     detstrings_singles,
-    extract_ci_singles_doubles_amplitudes_spinorb,
+    extract_ci_amplitudes,
     remove_index_restriction_doubles,
+    spatial_to_spinorb,
+    spinorb_to_spatial,
 )
-from tailoredcc.clusterdec import dump_clusterdec
+from tailoredcc.clusterdec import dump_clusterdec, run_clusterdec
 
 
 @pytest.mark.parametrize(
@@ -102,7 +111,8 @@ def test_amplitudes_to_spinorb(nocc, nvirt):
     cid_aa = np.random.randn(dsz)
     cid_bb = np.random.randn(dsz)
     cid_ab = np.random.randn(nocc, nocc, nvirt, nvirt)
-    c_ia, c_ijab = amplitudes_to_spinorb(c0, cis_a, cis_b, cid_aa, cid_ab, cid_bb)
+    amps = {0: c0, "a": cis_a, "b": cis_b, "aa": cid_aa, "ab": cid_ab, "bb": cid_bb}
+    c_ia, c_ijab = amplitudes_to_spinorb(amps, exci=2)
 
     cid_aa_full = remove_index_restriction_doubles(cid_aa, nocc, nvirt)
     cid_bb_full = remove_index_restriction_doubles(cid_bb, nocc, nvirt)
@@ -123,50 +133,58 @@ def test_amplitude_extraction_and_norms():
     mol.build(
         verbose=0,
         atom="N, 0., 0., 0. ; N,  0., 0., 1.4",
-        basis="sto-3g",
+        basis="321g",
     )
     m = scf.RHF(mol)
     m.kernel()
 
-    ncas = mol.nao_nr()
-    nelec = mol.nelec
+    # NOTE: need enough virtuals for a/b-only
+    # quadruple excitations
+    ncas = 10
+    nelec = (4, 4)
     print(f"CAS({nelec}, {ncas})")
     mc = mcscf.CASCI(m, ncas, nelec)
     mc.kernel()
-    c_ia, c_ijab = extract_ci_singles_doubles_amplitudes_spinorb(mc)
+
+    np.random.seed(42)
+    ci = mc.ci
+    ci_rnd = ci + np.random.randn(*ci.shape) * 1e-2
+    mc.ci = ci_rnd
+
+    ci_amps = extract_ci_amplitudes(mc, exci=4)
+    assert all(amp.size > 0 for amp in ci_amps.values())
+    c_ia, c_ijab, c3, c4 = amplitudes_to_spinorb(ci_amps, exci=4)
+
+    check_amplitudes_spinorb(c_ijab, 2)
+    check_amplitudes_spinorb(c3, 3)
+    # check_amplitudes_spinorb(c4, 4)
+
     t_ia, t_ijab = ci_to_cluster_amplitudes(c_ia, c_ijab)
 
     # compare the amplitude norms with ClusterDec
     c1norm = np.vdot(c_ia, c_ia)
     c2norm = 0.25 * np.vdot(c_ijab, c_ijab)
+    c3norm = 1 / 36 * np.vdot(c3, c3)
+    c4norm = 1 / 576 * np.vdot(c4, c4)
+
     t1norm = np.vdot(t_ia, t_ia)
     t2norm = 0.25 * np.vdot(t_ijab, t_ijab)
-
-    import os
-    import subprocess
-    import tempfile
-    from pathlib import Path
-    from shutil import which
 
     with tempfile.NamedTemporaryFile() as fp:
         dump_clusterdec(mc, fname=fp.name)
         if which("clusterdec_bit.x") is None:
             pytest.skip("clusterdec_bit.x executable not in PATH.")
-        cwd = os.getcwd()
-        exepath = Path(which("clusterdec_bit.x")).parent
-        os.chdir(exepath.resolve())
-        out = subprocess.run(["clusterdec_bit.x", fp.name], capture_output=True)
-        os.chdir(cwd)
-        lines = [ll.strip() for ll in out.stdout.decode("ascii").split("\n")]
-        for idx, ll in enumerate(lines):
-            if "|C_n|        |T_n|  |T_n|/|C_n|" in ll:
-                c1sq = float(lines[idx + 1].split(" ")[1])
-                c2sq = float(lines[idx + 2].split(" ")[1])
-                t1sq = float(lines[idx + 1].split(" ")[2])
-                t2sq = float(lines[idx + 2].split(" ")[2])
-                break
+        (c1sq, c2sq, c3sq, c4sq), (t1sq, t2sq, t3sq, t4sq) = run_clusterdec(fp.name)
+        print(c1sq, c2sq, c3sq, c4sq)
+        print(c1norm, c2norm, c3norm, c4norm)
+        print(t1sq, t2sq, t3sq, t4sq)
+
+        # NOTE: print-out by clusterdec is heavily truncated in some cases
         np.testing.assert_allclose(c1norm, c1sq, atol=1e-7, rtol=0)
         np.testing.assert_allclose(c2norm, c2sq, atol=1e-7, rtol=0)
+        np.testing.assert_allclose(c3norm, c3sq, atol=1e-7, rtol=0)
+        np.testing.assert_allclose(c4norm, c4sq, atol=1e-6, rtol=0)
+
         np.testing.assert_allclose(t1norm, t1sq, atol=1e-7, rtol=0)
         np.testing.assert_allclose(t2norm, t2sq, atol=1e-7, rtol=0)
 
@@ -186,3 +204,50 @@ def test_interleave_strings(alphas, betas, expected):
     assert len(ret) == len(expected)
     for r, ref in zip(ret, expected):
         assert r == ref
+
+
+def test_general_spinorb_to_spatial():
+    nocc_a = 4
+    nocc_b = 4
+    nvirt_a = 5
+    nvirt_b = 5
+
+    nocc = nocc_a + nocc_b
+    nvirt = nvirt_a + nvirt_b
+    exci = 3
+    np.random.seed(42)
+    tt = np.random.randn(*(exci * (nocc,) + exci * (nvirt,)))
+    slices = {"a": slice(0, None, 2), "b": slice(1, None, 2)}
+
+    perms = list(permutations(range(exci)))
+    parities = {p: compute_parity(p) for p in perms}
+    for _ in range(3):
+        for p1 in tqdm(perms):
+            sign1 = parities[p1]
+            for p2 in perms:
+                sign2 = parities[p2]
+                perm_total = np.concatenate([np.array(p1), exci + np.array(p2)])
+                tt = 0.5 * (tt + sign1 * sign2 * tt.transpose(perm_total))
+
+    for p1 in permutations(range(exci)):
+        sign1 = compute_parity(p1)
+        for p2 in permutations(range(exci)):
+            sign2 = compute_parity(p2)
+            perm_total = np.concatenate([np.array(p1), exci + np.array(p2)])
+            np.testing.assert_allclose(
+                tt.ravel(),
+                (sign1 * sign2 * tt.transpose(perm_total)).flatten(),
+                err_msg=f"{perm_total}",
+                atol=1e-8,
+            )
+
+    spinblocks = list(product("ab", repeat=exci))
+    for comb in product(list(spinblocks), repeat=2):
+        ospin, vspin = comb
+        ostr = "".join(ospin)
+        vstr = "".join(vspin)
+        if ospin.count("a") != vspin.count("a") or ospin.count("b") != vspin.count("b"):
+            tt[tuple(slices[ii] for ii in ostr + vstr)] = 0.0
+    t_spatial = spinorb_to_spatial(tt, exci, nocc_a, nocc_b, nvirt_a, nvirt_b)
+    t_out = spatial_to_spinorb(t_spatial, exci, nocc_a, nocc_b, nvirt_a, nvirt_b)
+    np.testing.assert_allclose(tt, t_out, atol=1e-10, rtol=0)

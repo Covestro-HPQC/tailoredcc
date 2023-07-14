@@ -33,12 +33,14 @@ def scf_ci():
     print(f"CAS({nelec}, {ncas})")
     mc = mcscf.CASCI(m, ncas, nelec)
     mc.fcisolver.conv_tol = 1e-12
+    mc.canonicalization = False
     mc.kernel()
 
     ncas = 4
     nelec = 4
     print(f"CAS({nelec}, {ncas})")
     mc2 = mcscf.CASCI(m, ncas, nelec)
+    mc2.canonicalization = False
     mc2.kernel()
 
     return m, mc, mc2
@@ -55,6 +57,14 @@ def test_cas_energy_crossref(backend, scf_ci):
 
     tcc = tccsd_from_ci(mc2, backend=backend)
     np.testing.assert_allclose(tcc.e_cas, mc2.e_tot - m.e_tot, atol=1e-9, rtol=0)
+
+    if backend not in ["pyscf", "oe"]:
+        return
+    np.random.seed(42)
+    for _ in range(5):
+        tcc = tccsd_from_ci(mc, backend=backend, gaussian_noise=1e-3)
+        with pytest.raises(AssertionError):
+            np.testing.assert_allclose(tcc.e_cas, mc.e_tot - m.e_tot, atol=1e-5, rtol=0)
 
     # TODO: not 100% correct...
     # print(f"CASSCF({nelec}, {ncas})")
@@ -101,6 +111,7 @@ def scf_casci_vqe():
 
     # run pyscf CASCI and generate integrals to start with
     mci = mcscf.CASCI(scfres, nact, (nalpha, nbeta))
+    mci.canonicalization = False
     mci.kernel()
     h1, ecore = mci.get_h1eff()
     h2 = ao2mo.restore(1, mci.ao2mo(), nact)
