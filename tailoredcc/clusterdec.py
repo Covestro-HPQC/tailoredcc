@@ -1,5 +1,9 @@
 # Proprietary and Confidential
 # Covestro Deutschland AG, 2023
+import os
+import subprocess
+from pathlib import Path
+from shutil import which
 
 
 def _append0(detstring, norb):
@@ -55,3 +59,26 @@ def dump_clusterdec(mc, tol=1e-14, fname="wfs.dat"):
 
     with open(fname, "w") as fo:
         fo.write(dstring)
+
+
+def run_clusterdec(fname="wfs.dat"):
+    cwd = os.getcwd()
+    exepath = Path(which("clusterdec_bit.x")).parent
+    os.chdir(exepath.resolve())
+    out = subprocess.run(["clusterdec_bit.x", fname], capture_output=True)
+    print(out.stderr.decode("ascii"))
+    print(out.stdout.decode("ascii"))
+    os.chdir(cwd)
+    lines = [ll.strip() for ll in out.stdout.decode("ascii").split("\n")]
+    for idx, ll in enumerate(lines):
+        if "|C_n|        |T_n|  |T_n|/|C_n|" in ll:
+            c1sq = float(lines[idx + 1].split(" ")[1])
+            c2sq = float(lines[idx + 2].split(" ")[1])
+            c3sq = float(lines[idx + 3].split(" ")[1])
+            c4sq = float(lines[idx + 4].split(" ")[1])
+            t1sq = float(lines[idx + 1].split(" ")[2])
+            t2sq = float(lines[idx + 2].split(" ")[2])
+            t3sq = float(lines[idx + 3].split(" ")[2])
+            t4sq = float(lines[idx + 4].split(" ")[2])
+            break
+    return (c1sq, c2sq, c3sq, c4sq), (t1sq, t2sq, t3sq, t4sq)

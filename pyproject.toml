@@ -93,6 +93,7 @@ file = "tailoredcc/_version.py"
 # https://beta.ruff.rs/docs/configuration/#using-pyprojecttoml
 [tool.ruff]
 line-length = 100
+ignore = ["E741"]
 
 [tool.black]
 line-length = 100

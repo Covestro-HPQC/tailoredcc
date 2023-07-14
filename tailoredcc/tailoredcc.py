@@ -13,10 +13,12 @@ from pyscf import mcscf, scf
 from pyscf.cc.addons import spatial2spin
 
 from .amplitudes import (
+    add_gaussian_noise,
+    amplitudes_to_spinorb,
     assert_spinorb_antisymmetric,
     ci_to_cluster_amplitudes,
-    extract_ci_singles_doubles_amplitudes_spinorb,
-    extract_vqe_singles_doubles_amplitudes_spinorb,
+    extract_ci_amplitudes,
+    extract_vqe_singles_doubles_amplitudes,
     prepare_cas_slices,
     set_cas_amplitudes_spatial_from_spinorb,
 )
@@ -24,31 +26,48 @@ from .solve_tcc import _solve_tccsd_oe, solve_tccsd
 from .utils import spin_blocks_interleaved_to_sequential, spinorb_from_spatial
 
 
-def tccsd_from_ci(mc: mcscf.casci.CASCI, backend="pyscf", **kwargs) -> Any:
+def tccsd_from_ci(mc: mcscf.casci.CASCI, backend="pyscf", gaussian_noise=None, **kwargs) -> Any:
     # TODO: docs
     nocca, noccb = mc.nelecas
     assert nocca == noccb
     nvirta = mc.ncas - nocca
     nvirtb = mc.ncas - noccb
     assert nvirta == nvirtb
-    assert isinstance(mc.ncore, int)
+    assert isinstance(mc.ncore, (int, np.int64))
     ncore = mc.ncore
     ncas = mc.ncas
     nvir = mc.mo_coeff.shape[1] - ncore - ncas
 
-    c_ia, c_ijab = extract_ci_singles_doubles_amplitudes_spinorb(mc)
+    ci_amps = extract_ci_amplitudes(mc, exci=2)
+    if gaussian_noise is not None:
+        ci_amps = add_gaussian_noise(ci_amps, std=gaussian_noise)
+    c_ia, c_ijab = amplitudes_to_spinorb(ci_amps)
 
-    if "CASSCF" in str(type(mc)):
-        raise NotImplementedError("TCC with CAS orbitals not yet implemented.")
+    if not np.allclose(mc._scf.mo_coeff, mc.mo_coeff, atol=1e-8, rtol=0):
+        raise NotImplementedError("TCC with orbitals other than HF orbitals not yet implemented.")
+        # require_hf_orbitals = ["adcc", "libcc"]
+        # if backend in require_hf_orbitals:
+        #     raise NotImplementedError(
+        #         "TCC with orbitals other than HF orbitals "
+        #         f"not yet implemented for backends: {require_hf_orbitals}."
+        #     )
         # mc._scf.mo_coeff = mc.mo_coeff
         # mc._scf.mo_energy = mc.mo_energy
+        # warnings.warn(
+        #     "Running with 'arbitrary' orbitals is an experimental feature! "
+        #     "Please check results carefully."
+        # )
 
     occslice, virtslice = prepare_cas_slices(nocca, noccb, nvirta, nvirtb, ncore, nvir, backend)
     return _tccsd_map[backend](mc._scf, c_ia, c_ijab, occslice, virtslice, **kwargs)
 
 
 def tccsd_from_vqe(
-    scfres: scf.hf.SCF, vqe: cov.vqe.ActiveSpaceChemistryVQE, backend="pyscf", **kwargs
+    scfres: scf.hf.SCF,
+    vqe: cov.vqe.ActiveSpaceChemistryVQE,
+    backend="pyscf",
+    gaussian_noise=None,
+    **kwargs,
 ):
     # TODO: docs, type hints
     nocca, noccb = vqe.nalpha, vqe.nbeta
@@ -63,7 +82,10 @@ def tccsd_from_vqe(
     ncas = vqe.nact
     nvir = scfres.mo_coeff.shape[1] - ncore - ncas
 
-    c_ia, c_ijab = extract_vqe_singles_doubles_amplitudes_spinorb(vqe)
+    ci_amps = extract_vqe_singles_doubles_amplitudes(vqe)
+    if gaussian_noise is not None:
+        ci_amps = add_gaussian_noise(ci_amps, std=gaussian_noise)
+    c_ia, c_ijab = amplitudes_to_spinorb(ci_amps)
 
     occslice, virtslice = prepare_cas_slices(nocca, noccb, nvirta, nvirtb, ncore, nvir, backend)
     return _tccsd_map[backend](scfres, c_ia, c_ijab, occslice, virtslice, **kwargs)
@@ -87,9 +109,10 @@ def tccsd_pyscf(
     # TODO: density fitting?
     # TODO: provide MO coefficients (e.g., from CASSCF)
     # TODO: UCCSD
-    ccsd = cc.CCSD(scfres)
+    ccsd = cc.UCCSD(scfres)
+    # ccsd = cc.CCSD(scfres)
     ccsd.max_cycle = kwargs.get("maxiter", ccsd.max_cycle)
-    ccsd.verbose = 4
+    ccsd.verbose = kwargs.get("verbose", 4)
     # ccsd.conv_tol = 1e-10
     # ccsd.conv_tol_normt = 1e-8
     update_amps = ccsd.update_amps
