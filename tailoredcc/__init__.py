@@ -1,7 +1,19 @@
-"""Tailored Coupled Cluster Code"""
-
-# Add imports here
+# Proprietary and Confidential
+# Covestro Deutschland AG, 2023
 from ._version import __version__
-from .tailoredcc import _solve_tccsd_oe, tccsd, tccsd_from_ci, tccsd_from_vqe
+from .tailoredcc import (
+    _solve_tccsd_oe,
+    ec_cc_from_ci,
+    tccsd,
+    tccsd_from_ci,
+    tccsd_from_vqe,
+)
 
-__all__ = ["tccsd_from_ci", "tccsd", "_solve_tccsd_oe", "tccsd_from_vqe", "__version__"]
+__all__ = [
+    "ec_cc_from_ci",
+    "tccsd_from_ci",
+    "tccsd",
+    "_solve_tccsd_oe",
+    "tccsd_from_vqe",
+    "__version__",
+]

@@ -36,12 +36,13 @@ def _solve_tccsd_oe(
 
     from .ccsd import oe as cc
 
-    old_energy = cc.ccsd_energy(t1, t2, fock, g, o, v)
+    mo_slices = [o.start, o.stop, v.start, v.stop]
+    old_energy = cc.ccsd_energy(t1, t2, fock, g, *mo_slices)
     print(f"\tInitial CCSD energy: {old_energy}")
     for idx in range(max_iter):
         start = time.time()
-        singles_res = cc.singles_residual(t1, t2, fock, g, o, v)
-        doubles_res = cc.doubles_residual(t1, t2, fock, g, o, v)
+        singles_res = np.array(cc.singles_residual(t1, t2, fock, g, *mo_slices))
+        doubles_res = np.array(cc.doubles_residual(t1, t2, fock, g, *mo_slices))
 
         # set the CAS-only residual to zero
         singles_res[t1slice] = 0.0
@@ -59,7 +60,7 @@ def _solve_tccsd_oe(
             new_doubles = new_vectorized_iterate[t1_dim:].reshape(t2.shape)
             old_vec = new_vectorized_iterate
 
-        current_energy = cc.ccsd_energy(new_singles, new_doubles, fock, g, o, v)
+        current_energy = cc.ccsd_energy(new_singles, new_doubles, fock, g, *mo_slices)
         delta_e = np.abs(old_energy - current_energy)
 
         if delta_e < stopping_eps:

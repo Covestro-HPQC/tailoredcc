@@ -24,6 +24,7 @@ from tailoredcc.amplitudes import (
     spatial_to_spinorb,
     spinorb_to_spatial,
 )
+from tailoredcc.ci_to_cc import ci_to_cc
 from tailoredcc.clusterdec import dump_clusterdec, run_clusterdec
 
 
@@ -140,7 +141,7 @@ def test_amplitude_extraction_and_norms():
 
     # NOTE: need enough virtuals for a/b-only
     # quadruple excitations
-    ncas = 10
+    ncas = 8
     nelec = (4, 4)
     print(f"CAS({nelec}, {ncas})")
     mc = mcscf.CASCI(m, ncas, nelec)
@@ -153,31 +154,64 @@ def test_amplitude_extraction_and_norms():
 
     ci_amps = extract_ci_amplitudes(mc, exci=4)
     assert all(amp.size > 0 for amp in ci_amps.values())
-    c_ia, c_ijab, c3, c4 = amplitudes_to_spinorb(ci_amps, exci=4)
+    c1, c2, c3, c4 = amplitudes_to_spinorb(ci_amps, exci=4)
 
-    check_amplitudes_spinorb(c_ijab, 2)
-    check_amplitudes_spinorb(c3, 3)
+    # print("Amplitudes extracted.")
+    # check_amplitudes_spinorb(c2, 2)
+    # check_amplitudes_spinorb(c3, 3)
     # check_amplitudes_spinorb(c4, 4)
 
-    t_ia, t_ijab = ci_to_cluster_amplitudes(c_ia, c_ijab)
+    # NOTE: legacy conversion :)
+    t_ia, t_ijab = ci_to_cluster_amplitudes(c1, c2)
+
+    c1 = c1.T
+    c2 = c2.transpose(2, 3, 0, 1)
+    c3 = c3.transpose(3, 4, 5, 0, 1, 2)
+    c4 = c4.transpose(4, 5, 6, 7, 0, 1, 2, 3)
+    t1, t2, t3, t4 = ci_to_cc(c1, c2, c3, c4)
+
+    print("Checking T amp symmetry.")
+
+    print("T2")
+    check_amplitudes_spinorb(t2, 2)
+    print("T3")
+    check_amplitudes_spinorb(t3, 3)
+    # print("T4")
+    # check_amplitudes_spinorb(t4, 4)
+
+    t1 = t1.T
+    t2 = t2.transpose(2, 3, 0, 1)
+    t3 = t3.transpose(3, 4, 5, 0, 1, 2)
+    t4 = t4.transpose(4, 5, 6, 7, 0, 1, 2, 3)
+
+    np.testing.assert_allclose(t_ia, t1, atol=1e-12)
+    np.testing.assert_allclose(t_ijab, t2, atol=1e-12)
+
+    from math import factorial
 
     # compare the amplitude norms with ClusterDec
-    c1norm = np.vdot(c_ia, c_ia)
-    c2norm = 0.25 * np.vdot(c_ijab, c_ijab)
-    c3norm = 1 / 36 * np.vdot(c3, c3)
-    c4norm = 1 / 576 * np.vdot(c4, c4)
+    c1norm = np.vdot(c1, c1)
+    c2norm = np.vdot(c2, c2) / factorial(2) ** 2
+    c3norm = np.vdot(c3, c3) / factorial(3) ** 2
+    c4norm = np.vdot(c4, c4) / factorial(4) ** 2
 
-    t1norm = np.vdot(t_ia, t_ia)
-    t2norm = 0.25 * np.vdot(t_ijab, t_ijab)
+    t1norm = np.vdot(t1, t1)
+    t2norm = np.vdot(t2, t2) / factorial(2) ** 2
+    t3norm = np.vdot(t3, t3) / factorial(3) ** 2
+    t4norm = np.vdot(t4, t4) / factorial(4) ** 2
 
     with tempfile.NamedTemporaryFile() as fp:
         dump_clusterdec(mc, fname=fp.name)
         if which("clusterdec_bit.x") is None:
             pytest.skip("clusterdec_bit.x executable not in PATH.")
         (c1sq, c2sq, c3sq, c4sq), (t1sq, t2sq, t3sq, t4sq) = run_clusterdec(fp.name)
+        print("|C|^2")
         print(c1sq, c2sq, c3sq, c4sq)
         print(c1norm, c2norm, c3norm, c4norm)
+
+        print("|T|^2")
         print(t1sq, t2sq, t3sq, t4sq)
+        print(t1norm, t2norm, t3norm, t4norm)
 
         # NOTE: print-out by clusterdec is heavily truncated in some cases
         np.testing.assert_allclose(c1norm, c1sq, atol=1e-7, rtol=0)
@@ -187,6 +221,8 @@ def test_amplitude_extraction_and_norms():
 
         np.testing.assert_allclose(t1norm, t1sq, atol=1e-7, rtol=0)
         np.testing.assert_allclose(t2norm, t2sq, atol=1e-7, rtol=0)
+        np.testing.assert_allclose(t3norm, t3sq, atol=1e-7, rtol=0)
+        np.testing.assert_allclose(t4norm, t4sq, atol=1e-6, rtol=0)
 
 
 @pytest.mark.parametrize(

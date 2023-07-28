@@ -26,6 +26,7 @@ dependencies = [
     "openfermion",
     "openfermionpyscf",
     "opt_einsum",
+    "jax",
     "covvqetools @ git+ssh://git@gitlab.ssh.covestro.com/quantum-computing/covvqetools@master",
 ]
 
@@ -93,7 +94,7 @@ file = "tailoredcc/_version.py"
 # https://beta.ruff.rs/docs/configuration/#using-pyprojecttoml
 [tool.ruff]
 line-length = 100
-ignore = ["E741"]
+ignore = ["E741", "E402"]
 
 [tool.black]
 line-length = 100

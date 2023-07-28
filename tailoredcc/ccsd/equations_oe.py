@@ -1,12 +1,25 @@
 # Proprietary and Confidential
 # Covestro Deutschland AG, 2023
 
-from opt_einsum import contract
+from functools import partial
+
+from jax import config
+
+config.update("jax_enable_x64", True)
+import jax
+import jax.numpy as jnp
 
 
-def einsum(*args, **kwargs):
-    kwargs["optimize"] = True
-    return contract(*args, **kwargs)
+def einsum(*args, optimize=None, **kwargs):
+    if optimize is None or optimize is False:
+        result = jnp.einsum(*args, **kwargs)
+    elif optimize is True:
+        result = jnp.einsum(*args, optimize=True, **kwargs)
+    elif isinstance(optimize, list):
+        result = jnp.einsum(*args, **kwargs, optimize=optimize[1:])
+    else:
+        raise NotImplementedError(f"Handing of optimize={optimize} in jax mode not yet implemented")
+    return result
 
 
 def ccsd_energy_correlation_oe(t1, t2, f, g, o, v):
@@ -41,7 +54,8 @@ def ccsd_energy_correlation_oe(t1, t2, f, g, o, v):
     return energy
 
 
-def ccsd_energy_oe(t1, t2, f, g, o, v):
+@partial(jax.jit, static_argnames=["o1", "o2", "v1", "v2"])
+def ccsd_energy_oe(t1, t2, f, g, o1, o2, v1, v2):
     """
     < 0 | e(-T) H e(T) | 0> :
     :param f:
@@ -52,6 +66,8 @@ def ccsd_energy_oe(t1, t2, f, g, o, v):
     :param v:
     :return:
     """
+    o = slice(o1, o2)
+    v = slice(v1, v2)
     # 	  1.0000 f(i,i)
     energy = 1.0 * einsum("ii", f[o, o])
 
@@ -72,7 +88,8 @@ def ccsd_energy_oe(t1, t2, f, g, o, v):
     return energy
 
 
-def singles_residual_oe(t1, t2, f, g, o, v):
+@partial(jax.jit, static_argnames=["o1", "o2", "v1", "v2"])
+def singles_residual_oe(t1, t2, f, g, o1, o2, v1, v2):
     """
     < 0 | m* e e(-T) H e(T) | 0>
     :param f:
@@ -83,6 +100,8 @@ def singles_residual_oe(t1, t2, f, g, o, v):
     :param v:
     :return:
     """
+    o = slice(o1, o2)
+    v = slice(v1, v2)
     # 	  1.0000 f(e,m)
     singles_res = 1.0 * einsum("em->em", f[v, o])
 
@@ -146,7 +165,8 @@ def singles_residual_oe(t1, t2, f, g, o, v):
     return singles_res
 
 
-def doubles_residual_oe(t1, t2, f, g, o, v):
+@partial(jax.jit, static_argnames=["o1", "o2", "v1", "v2"])
+def doubles_residual_oe(t1, t2, f, g, o1, o2, v1, v2):
     """
      < 0 | m* n* f e e(-T) H e(T) | 0>
     :param f:
@@ -157,6 +177,8 @@ def doubles_residual_oe(t1, t2, f, g, o, v):
     :param v:
     :return:
     """
+    o = slice(o1, o2)
+    v = slice(v1, v2)
     # 	 -1.0000 P(m,n)f(i,n)*t2(e,f,m,i)
     contracted_intermediate = -1.0 * einsum("in,efmi->efmn", f[o, o], t2)
     doubles_res = 1.00000 * contracted_intermediate + -1.00000 * einsum(
