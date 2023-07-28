@@ -21,9 +21,8 @@ dependencies:
   - pyscf
   - openfermion
   - openfermionpyscf
+  - jax
   # Tests
   - pytest
   - pytest-cov
   - pyinstrument
-  # - pip:
-    # - pyscf

@@ -12,6 +12,8 @@ import numpy.typing as npt
 from pyscf import mcscf, scf
 from pyscf.cc.addons import spatial2spin
 
+from tailoredcc.ci_to_cc import ci_to_cc
+
 from .amplitudes import (
     add_gaussian_noise,
     amplitudes_to_spinorb,
@@ -250,7 +252,7 @@ def tccsd(
     return ret
 
 
-def _tccsd_opt_einsum(
+def tccsd_opt_einsum(
     scfres: scf.hf.SCF,
     c_ia: npt.NDArray,
     c_ijab: npt.NDArray,
@@ -329,15 +331,123 @@ def _tccsd_opt_einsum(
     np.testing.assert_allclose(t2.transpose(2, 3, 0, 1), t2f[t2slice], atol=1e-14, rtol=0)
 
     # compute correlation/total TCCSD energy
-    e_tcc = cc.ccsd_energy_correlation(t1f, t2f, fock, eri_phys_asymm, o, v)  # - hf_energy
+    e_tcc = cc.ccsd_energy_correlation(t1f, t2f, fock, eri_phys_asymm, o, v)
 
     ret = TCC(scfres, t1f, t2f, hf_energy + mol.energy_nuc(), e_cas, e_tcc)
+    return ret
+
+
+def ec_cc_from_ci(mc: mcscf.casci.CASCI, **kwargs):
+    # TODO: docs
+    nocca, noccb = mc.nelecas
+    assert nocca == noccb
+    nvirta = mc.ncas - nocca
+    nvirtb = mc.ncas - noccb
+    assert nvirta == nvirtb
+    assert isinstance(mc.ncore, (int, np.int64))
+    ncore = mc.ncore
+    ncas = mc.ncas
+    nvir = mc.mo_coeff.shape[1] - ncore - ncas
+
+    ci_amps = extract_ci_amplitudes(mc, exci=4)
+    # if gaussian_noise is not None:
+    #     ci_amps = add_gaussian_noise(ci_amps, std=gaussian_noise)
+    ci_amps_spinorb = amplitudes_to_spinorb(ci_amps, exci=4)
+
+    if not np.allclose(mc._scf.mo_coeff, mc.mo_coeff, atol=1e-8, rtol=0):
+        raise NotImplementedError("ec-CC with orbitals other than HF orbitals not yet implemented.")
+
+    occslice, virtslice = prepare_cas_slices(nocca, noccb, nvirta, nvirtb, ncore, nvir, "oe")
+    return ec_cc(mc._scf, *ci_amps_spinorb, occslice, virtslice, **kwargs)
+
+
+def ec_cc(
+    scfres: scf.hf.SCF,
+    c1: npt.NDArray,
+    c2: npt.NDArray,
+    c3: npt.NDArray,
+    c4: npt.NDArray,
+    occslice: slice,
+    virtslice: slice,
+    guess_t1_t2_from_ci: bool = False,
+    **kwargs,
+):
+    warnings.warn("This implementation based on opt_einsum is not tuned for performance.")
+    mol = scfres.mol
+    # 1. convert to T amplitudes
+    t1, t2, t3, t4 = ci_to_cc(c1, c2, c3, c4)
+    print("=> Amplitudes converted.")
+
+    # 2. build CCSD prerequisites
+    from openfermionpyscf._run_pyscf import compute_integrals
+
+    oei, eri_of_spatial = compute_integrals(mol, scfres)
+    soei, eri_of = spinorb_from_spatial(oei, eri_of_spatial)
+    eri_of_asymm = eri_of - eri_of.transpose(0, 1, 3, 2)
+    nocc = sum(mol.nelec)
+    nvirt = 2 * mol.nao_nr() - nocc
+    # to Physicists' notation <12|1'2'> (OpenFermion stores <12|2'1'>)
+    eri_phys_asymm = eri_of_asymm.transpose(0, 1, 3, 2)
+
+    # orbital energy differences
+    eps = np.kron(scfres.mo_energy, np.ones(2))
+    n = np.newaxis
+    o = slice(None, nocc)
+    v = slice(nocc, None)
+    e_abij = 1 / (-eps[v, n, n, n] - eps[n, v, n, n] + eps[n, n, o, n] + eps[n, n, n, o])
+    e_ai = 1 / (-eps[v, n] + eps[n, o])
+
+    # (canonical) Fock operator
+    fock = soei + np.einsum("piqi->pq", eri_phys_asymm[:, o, :, o])
+    hf_energy = 0.5 * np.einsum("ii", (fock + soei)[o, o])
+    print("=> Prerequisites built.")
+
+    # 3. compute the constant contributions to singles/doubles
+    # residual from t3, t4, t3t1 terms
+    from .solve_ec_cc import solve_ec_cc, static_t3_t4_contractions
+
+    t1 = t1.T
+    t3 = t3.transpose(3, 4, 5, 0, 1, 2)
+    t4 = t4.transpose(4, 5, 6, 7, 0, 1, 2, 3)
+    r1, r2 = static_t3_t4_contractions(t1, t3, t4, fock, eri_phys_asymm, occslice, virtslice, o, v)
+    ############################
+
+    # 4. set up T amplitudes in full MO space
+    t1_mo = np.zeros((nocc, nvirt))
+    t2_mo = (eri_phys_asymm[v, v, o, o] * e_abij).transpose(2, 3, 0, 1)
+
+    # optionally use CAS T1/T2 as guess
+    if guess_t1_t2_from_ci:
+        t1_mo[occslice, virtslice] = t1.T
+        t2_mo[occslice, occslice, virtslice, virtslice] = t2
+
+    r1_mo = np.zeros_like(t1_mo.T)
+    r2_mo = np.zeros_like(t2_mo.transpose(2, 3, 0, 1))
+    r1_mo[virtslice, occslice] = r1
+    r2_mo[virtslice, virtslice, occslice, occslice] = r2
+
+    # 5. solve ec-CC projection equations
+    t1f, t2f, e_ecc = solve_ec_cc(
+        t1_mo.T,
+        t2_mo.transpose(2, 3, 0, 1),
+        r1_mo,
+        r2_mo,
+        fock,
+        eri_phys_asymm,
+        o,
+        v,
+        e_ai,
+        e_abij,
+        **kwargs,
+    )
+    e_corr = e_ecc - hf_energy
+    ret = TCC(scfres, t1f, t2f, hf_energy + mol.energy_nuc(), 0.0, e_corr)
     return ret
 
 
 _tccsd_map: Dict[str, Callable] = {
     "adcc": partial(tccsd, backend="adcc"),
     "libcc": partial(tccsd, backend="libcc"),
-    "oe": _tccsd_opt_einsum,
+    "oe": tccsd_opt_einsum,
     "pyscf": tccsd_pyscf,
 }

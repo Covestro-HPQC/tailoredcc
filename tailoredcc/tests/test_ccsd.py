@@ -101,8 +101,13 @@ def test_residual_crossref(scfres_mp):
     )
     t1 = spin_blocks_sequential_to_interleaved(t.ov.to_ndarray(), n_per_dim(b.ov))
     t2 = spin_blocks_sequential_to_interleaved(t.oovv.to_ndarray(), n_per_dim(b.oovv))
-    sres_np = ccsd.oe.singles_residual(t1.T, t2.transpose(2, 3, 0, 1), fock, eri_phys_asymm, o, v).T
-    dres_np = ccsd.oe.doubles_residual(t1.T, t2.transpose(2, 3, 0, 1), fock, eri_phys_asymm, o, v)
+    mo_slices = [o.start, o.stop, v.start, v.stop]
+    sres_np = ccsd.oe.singles_residual(
+        t1.T, t2.transpose(2, 3, 0, 1), fock, eri_phys_asymm, *mo_slices
+    ).T
+    dres_np = ccsd.oe.doubles_residual(
+        t1.T, t2.transpose(2, 3, 0, 1), fock, eri_phys_asymm, *mo_slices
+    )
     sres_np = spin_blocks_interleaved_to_sequential(sres_np)
     dres_np = spin_blocks_interleaved_to_sequential(dres_np).transpose(2, 3, 0, 1)
     np.testing.assert_allclose(sres_adcc, sres_np, atol=1e-12, rtol=0)

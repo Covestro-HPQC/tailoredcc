@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from pyscf import ao2mo, gto, mcscf, scf
 
-from tailoredcc import tccsd_from_ci, tccsd_from_vqe
+from tailoredcc import ec_cc_from_ci, tccsd_from_ci, tccsd_from_vqe
 
 
 @pytest.fixture(scope="module")
@@ -164,3 +164,25 @@ def test_tccsd_with_triples_correction(scf_ci):
     tcc = tccsd_from_ci(mc2, backend="pyscf", triples_correction=True)
     np.testing.assert_allclose(tcc.e_cas, mc2.e_tot - m.e_tot, atol=1e-9, rtol=0)
     assert np.abs(tcc.e_triples) > 1e-8
+
+
+def test_ec_cc_against_fci():
+    mol = gto.M(atom="H 0 0 0; F 0 0 1.1", basis="3-21g")
+    scfres = scf.RHF(mol)
+    scfres.kernel()
+
+    mc = mcscf.CASCI(scfres, nelecas=mol.nelec, ncas=mol.nao_nr())
+    mc.fcisolver.conv_tol = 1e-12
+    mc.kernel()
+
+    ret = ec_cc_from_ci(mc, conv_tol=1e-14, guess_t1_t2_from_ci=False)
+    print(ret.e_tot, ret.e_tot - mc.e_tot)
+    np.testing.assert_allclose(ret.e_tot, mc.e_tot, atol=1e-9, rtol=0)
+
+    # check that the code runs with a normal CASCI
+    mc2 = mcscf.CASCI(scfres, nelecas=8, ncas=8)
+    mc2.fcisolver.conv_tol = 1e-12
+    mc2.canonicalization = False
+    mc2.kernel()
+    ret = ec_cc_from_ci(mc2, conv_tol=1e-14, guess_t1_t2_from_ci=True)
+    print(ret.e_tot, ret.e_tot - mc.e_tot)

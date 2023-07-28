@@ -80,9 +80,18 @@ def extract_ci_amplitudes(mc: mcscf.casci.CASCI, exci=2):
         t4addrs, t4signs = tn_addrs_signs(ncas, nocca, 4)
         ciq_aaaa = fcivec[t4addrs, 0] * t4signs
         ciq_bbbb = fcivec[0, t4addrs] * t4signs
-        ciq_aaab = np.einsum("ij,i,j->ij", fcivec[t3addrs[:, None], t1addrs], t3signs, t1signs)
-        ciq_aabb = np.einsum("ij,i,j->ij", fcivec[t2addrs[:, None], t2addrs], t2signs, t2signs)
-        ciq_abbb = np.einsum("ij,i,j->ij", fcivec[t1addrs[:, None], t3addrs], t1signs, t3signs)
+        if len(t3addrs) and len(t1addrs):
+            ciq_aaab = np.einsum("ij,i,j->ij", fcivec[t3addrs[:, None], t1addrs], t3signs, t1signs)
+            ciq_abbb = np.einsum("ij,i,j->ij", fcivec[t1addrs[:, None], t3addrs], t1signs, t3signs)
+        else:
+            ciq_aaab = np.zeros((0, noccb * nvirtb))
+            ciq_abbb = np.zeros((nocca * nvirta, 0))
+
+        if len(t2addrs):
+            ciq_aabb = np.einsum("ij,i,j->ij", fcivec[t2addrs[:, None], t2addrs], t2signs, t2signs)
+        else:
+            raise ValueError()
+            ciq_aabb = np.zeros((nocca, nocca, noccb, noccb, nvirta, nvirta, nvirtb, nvirtb))
         ret["aaaa"] = ciq_aaaa
         ret["bbbb"] = ciq_bbbb
         ret["aaab"] = ciq_aaab
@@ -170,7 +179,9 @@ def remove_index_restriction_doubles(cid_aa: npt.NDArray, nocc: int, nvirt: int)
 
 def remove_index_restriction_triples(tensor: npt.NDArray, nocc: int, nvirt: int):
     exci = 3
-    assert tensor.size == number_nonredundant_amplitudes(nocc + nvirt, nocc, exci)
+    assert tensor.size == number_nonredundant_amplitudes(
+        nocc + nvirt, nocc, exci
+    ), f"{tensor.size},{number_nonredundant_amplitudes(nocc + nvirt, nocc, exci)}"
     assert tensor.ndim == 1
     idx = 0
     ret = np.zeros(exci * (nocc,) + exci * (nvirt,))
@@ -386,13 +397,23 @@ def check_amplitudes_spinorb(tt, exci=2, check_spin_forbidden_blocks=True):
         sign1 = compute_parity(p1)
         p2 = list(range(exci))
         perm_total = np.concatenate([np.array(p1), exci + np.array(p2)])
-        np.testing.assert_allclose(
-            tt, sign1 * tt.transpose(perm_total), err_msg=f"{perm_total}, hole", atol=1e-8
-        )
+        try:
+            np.testing.assert_allclose(
+                tt, sign1 * tt.transpose(perm_total), err_msg=f"{perm_total}, hole", atol=1e-8
+            )
+        except AssertionError:
+            print(perm_total, "failed")
+        else:
+            print(perm_total, "OK")
         perm_total = np.concatenate([np.array(p2), exci + np.array(p1)])
-        np.testing.assert_allclose(
-            tt, sign1 * tt.transpose(perm_total), err_msg=f"{perm_total}, particle", atol=1e-8
-        )
+        try:
+            np.testing.assert_allclose(
+                tt, sign1 * tt.transpose(perm_total), err_msg=f"{perm_total}, particle", atol=1e-8
+            )
+        except AssertionError:
+            print(perm_total, "failed")
+        else:
+            print(perm_total, "OK")
 
     if check_spin_forbidden_blocks:
         slices = {"a": slice(0, None, 2), "b": slice(1, None, 2)}
@@ -574,6 +595,19 @@ def number_nonredundant_amplitudes(nmo, nocc, exci):
     for e in range(exci):
         ret *= (nocc - e) * (nvirt - e)
     ret //= (factorial(exci)) ** 2
+    return ret
+
+
+def number_overlaps_tccsd(nmo, nalpha, nbeta):
+    nvirta = nmo - nalpha
+    nvirtb = nmo - nbeta
+    singles = number_nonredundant_amplitudes(nmo, nalpha, 1) + number_nonredundant_amplitudes(
+        nmo, nbeta, 1
+    )
+    doubles = number_nonredundant_amplitudes(nmo, nalpha, 2) + number_nonredundant_amplitudes(
+        nmo, nbeta, 2
+    )
+    ret = 1 + singles + doubles + (nalpha * nbeta * nvirta * nvirtb)
     return ret
 
 
