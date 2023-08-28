@@ -186,3 +186,30 @@ def test_ec_cc_against_fci():
     mc2.kernel()
     ret = ec_cc_from_ci(mc2, conv_tol=1e-14, guess_t1_t2_from_ci=True)
     print(ret.e_tot, ret.e_tot - mc.e_tot)
+
+
+def test_from_fqe_wfn():
+    mol = gto.M(atom="H 0 0 0; F 0 0 1.1", basis="3-21g")
+    scfres = scf.RHF(mol).run()
+
+    ncas = 6
+    nelec = (3, 3)
+    mc = mcscf.CASCI(scfres, nelecas=nelec, ncas=ncas)
+    mc.canonicalization = False
+    mc.kernel()
+
+    from tailoredcc.tailoredcc import ec_cc_from_fqe, tccsd_from_fqe
+    from tailoredcc.utils import pyscf_to_fqe_wf
+
+    wfn = pyscf_to_fqe_wf(mc.ci, norbs=ncas, nelec=nelec)
+
+    ret_fqe = tccsd_from_fqe(scfres, wfn)
+    ret_ci = tccsd_from_ci(mc)
+
+    np.testing.assert_allclose(ret_fqe.e_tot, ret_ci.e_tot, atol=1e-9, rtol=0)
+
+    # ec-CC
+    ret_fqe = ec_cc_from_fqe(scfres, wfn)
+    ret_ci = ec_cc_from_ci(mc)
+
+    np.testing.assert_allclose(ret_fqe.e_tot, ret_ci.e_tot, atol=1e-9, rtol=0)

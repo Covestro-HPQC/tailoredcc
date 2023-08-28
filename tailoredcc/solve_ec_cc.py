@@ -23,10 +23,11 @@ def solve_ec_cc(
     v,
     e_ai,
     e_abij,
-    max_iter=100,
+    maxiter=100,
     conv_tol=1.0e-8,
     diis_size=7,
     diis_start_cycle=4,
+    verbose=4,
 ):
     # initialize diis if diis_size is not None
     # else normal iterate
@@ -41,8 +42,9 @@ def solve_ec_cc(
 
     mo_slices = [o.start, o.stop, v.start, v.stop]
     old_energy = cc.ccsd_energy(t1, t2, fock, g, *mo_slices)
-    print(f"\tInitial ec-CC energy: {old_energy}")
-    for idx in range(max_iter):
+    if verbose > 3:
+        print(f"\tInitial ec-CC energy: {old_energy}")
+    for idx in range(maxiter):
         start = time.time()
         singles_res = cc.singles_residual(t1, t2, fock, g, *mo_slices)
         doubles_res = cc.doubles_residual(t1, t2, fock, g, *mo_slices)
@@ -70,17 +72,19 @@ def solve_ec_cc(
         rnorm = np.linalg.norm(d1) + np.linalg.norm(d2)
 
         if np.abs(delta_e) < conv_tol:
-            print(f"\tConverged in iteration {idx}.")
+            if verbose > 3:
+                print(f"\tConverged in iteration {idx}.")
             return new_singles, new_doubles, current_energy
         else:
             t1 = new_singles
             t2 = new_doubles
             old_energy = current_energy
-            print(
-                "\tIteration {: 5d}\t{: 5.15f}\t{: 5.15f}\t{: 5.15f}\t{: 5.3f}s".format(
-                    idx, old_energy, delta_e, rnorm, time.time() - start
+            if verbose > 3:
+                print(
+                    "\tIteration {: 5d}\t{: 5.15f}\t{: 5.15f}\t{: 5.15f}\t{: 5.3f}s".format(
+                        idx, old_energy, delta_e, rnorm, time.time() - start
+                    )
                 )
-            )
     else:
         print("Did not converge.")
         return new_singles, new_doubles, current_energy

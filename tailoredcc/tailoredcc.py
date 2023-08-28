@@ -64,6 +64,19 @@ def tccsd_from_ci(mc: mcscf.casci.CASCI, backend="pyscf", gaussian_noise=None, *
     return _tccsd_map[backend](mc._scf, c_ia, c_ijab, occslice, virtslice, **kwargs)
 
 
+def tccsd_from_fqe(
+    scfres: scf.hf.SCF,
+    wfn,
+    backend="pyscf",
+    gaussian_noise=None,
+    **kwargs,
+):
+    from .utils import fqe_to_fake_ci
+
+    mc = fqe_to_fake_ci(wfn, scfres, sz=0)
+    return tccsd_from_ci(mc, backend=backend, gaussian_noise=gaussian_noise, **kwargs)
+
+
 def tccsd_from_vqe(
     scfres: scf.hf.SCF,
     vqe: cov.vqe.ActiveSpaceChemistryVQE,
@@ -361,6 +374,17 @@ def ec_cc_from_ci(mc: mcscf.casci.CASCI, **kwargs):
     return ec_cc(mc._scf, *ci_amps_spinorb, occslice, virtslice, **kwargs)
 
 
+def ec_cc_from_fqe(
+    scfres: scf.hf.SCF,
+    wfn,
+    **kwargs,
+):
+    from .utils import fqe_to_fake_ci
+
+    mc = fqe_to_fake_ci(wfn, scfres, sz=0)
+    return ec_cc_from_ci(mc, **kwargs)
+
+
 def ec_cc(
     scfres: scf.hf.SCF,
     c1: npt.NDArray,
@@ -369,14 +393,16 @@ def ec_cc(
     c4: npt.NDArray,
     occslice: slice,
     virtslice: slice,
-    guess_t1_t2_from_ci: bool = False,
+    guess_t1_t2_from_ci: bool = True,
+    t1_guess: npt.NDArray = None,
+    t2_guess: npt.NDArray = None,
     **kwargs,
 ):
     warnings.warn("This implementation based on opt_einsum is not tuned for performance.")
     mol = scfres.mol
     # 1. convert to T amplitudes
     t1, t2, t3, t4 = ci_to_cc(c1, c2, c3, c4)
-    print("=> Amplitudes converted.")
+    # print("=> Amplitudes converted.")
 
     # 2. build CCSD prerequisites
     from openfermionpyscf._run_pyscf import compute_integrals
@@ -400,7 +426,7 @@ def ec_cc(
     # (canonical) Fock operator
     fock = soei + np.einsum("piqi->pq", eri_phys_asymm[:, o, :, o])
     hf_energy = 0.5 * np.einsum("ii", (fock + soei)[o, o])
-    print("=> Prerequisites built.")
+    # print("=> Prerequisites built.")
 
     # 3. compute the constant contributions to singles/doubles
     # residual from t3, t4, t3t1 terms
@@ -421,6 +447,11 @@ def ec_cc(
         t1_mo[occslice, virtslice] = t1.T
         t2_mo[occslice, occslice, virtslice, virtslice] = t2
 
+    if t1_guess is not None:
+        t1_mo = t1_guess.copy().T
+    if t2_guess is not None:
+        t2_mo = t2_guess.transpose(2, 3, 0, 1)
+
     r1_mo = np.zeros_like(t1_mo.T)
     r2_mo = np.zeros_like(t2_mo.transpose(2, 3, 0, 1))
     r1_mo[virtslice, occslice] = r1
@@ -440,6 +471,9 @@ def ec_cc(
         e_abij,
         **kwargs,
     )
+    e_ecc = float(e_ecc)
+    t1f = np.array(t1f)
+    t2f = np.array(t2f)
     e_corr = e_ecc - hf_energy
     ret = TCC(scfres, t1f, t2f, hf_energy + mol.energy_nuc(), 0.0, e_corr)
     return ret

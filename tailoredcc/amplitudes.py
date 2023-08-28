@@ -611,6 +611,27 @@ def number_overlaps_tccsd(nmo, nalpha, nbeta):
     return ret
 
 
+def number_overlaps_eccc(nmo, nalpha, nbeta):
+    nvirta = nmo - nalpha
+    nvirtb = nmo - nbeta
+    ret = number_overlaps_tccsd(nmo, nalpha, nbeta)
+    triples = number_nonredundant_amplitudes(nmo, nalpha, 3) + number_nonredundant_amplitudes(
+        nmo, nbeta, 3
+    )  # aaa + bbb
+    triples += number_nonredundant_amplitudes(nmo, nalpha, 2) * (nbeta * nvirtb)  # aab
+    triples += number_nonredundant_amplitudes(nmo, nalpha, 2) * (nalpha * nvirta)  # abb
+    quadruples = number_nonredundant_amplitudes(nmo, nalpha, 4) + number_nonredundant_amplitudes(
+        nmo, nbeta, 4
+    )  # aaaa + bbbb
+    quadruples += number_nonredundant_amplitudes(nmo, nalpha, 3) * (nbeta * nvirtb)  # aaab
+    quadruples += number_nonredundant_amplitudes(nmo, nbeta, 3) * (nalpha * nvirta)  # abbb
+    quadruples += number_nonredundant_amplitudes(nmo, nalpha, 2) * number_nonredundant_amplitudes(
+        nmo, nbeta, 2
+    )  # aabb
+    ret += triples + quadruples
+    return ret
+
+
 def compute_parity(perm):
     inversions = 0
     n = len(perm)
