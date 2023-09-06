@@ -162,7 +162,7 @@ def remove_index_restriction_doubles(cid_aa: npt.NDArray, nocc: int, nvirt: int)
     # TODO: docs
     assert cid_aa.ndim == 1
     assert cid_aa.size == nocc * (nocc - 1) // 2 * nvirt * (nvirt - 1) // 2
-    cid_aa_full = np.zeros((nocc, nocc, nvirt, nvirt))
+    cid_aa_full = np.zeros((nocc, nocc, nvirt, nvirt), dtype=cid_aa.dtype)
     idx = 0
     for j in range(nocc):
         for i in range(j):
@@ -716,7 +716,9 @@ def spatial_to_spinorb(tensors_dict, exci_level, nocc_a, nocc_b, nvirt_a, nvirt_
     ooo = slices_spinorb["occ"]
     vvv = slices_spinorb["virt"]
 
-    t_out = np.zeros(exci_level * (nocc,) + exci_level * (nvirt,), dtype=float)
+    t_out = np.zeros(
+        exci_level * (nocc,) + exci_level * (nvirt,), dtype=list(tensors_dict.values())[0].dtype
+    )
     for comb in product(list(spinblocks), repeat=2):
         ospin, vspin = comb
         ostr = "".join(ospin)

@@ -1,5 +1,7 @@
 # Proprietary and Confidential
 # Covestro Deutschland AG, 2023
+import warnings
+
 import numpy as np
 
 
@@ -118,10 +120,25 @@ def fqe_to_pyscf(wfn, nelec: tuple):
     norb_list = tuple(list(range(norbs)))
     alpha_strings = make_strings(norb_list, nelec[0])
     beta_strings = make_strings(norb_list, nelec[1])
-    ret = np.zeros((num_alpha, num_beta))
+
+    ret = np.zeros((num_alpha, num_beta), dtype=float)
+    fqe_civec = fqe_ci.coeff.copy()
+
+    if np.max(np.abs(fqe_civec.imag)) > 1e-13:
+        warnings.warn("Complex FCI vector found in FQE.")
+        max_idx = np.argmax(np.abs(fqe_civec))
+        max_val = fqe_civec.flatten()[max_idx]
+        global_phase = np.exp(1j * np.angle(max_val))
+        print("Maximum abs value", max_val)
+        print("Global phase", global_phase)
+        fqe_civec /= global_phase
+        fqe_civec = fqe_civec.real
+        fqe_civec /= np.linalg.norm(fqe_civec)
+    else:
+        fqe_civec = fqe_civec.real
     for paidx, pyscf_alpha_idx in enumerate(alpha_strings):
         for pbidx, pyscf_beta_idx in enumerate(beta_strings):
-            ret[paidx, pbidx] = fqe_ci.coeff[
+            ret[paidx, pbidx] = fqe_civec[
                 fqe_graph.index_alpha(pyscf_alpha_idx), fqe_graph.index_beta(pyscf_beta_idx)
             ]
     return ret
