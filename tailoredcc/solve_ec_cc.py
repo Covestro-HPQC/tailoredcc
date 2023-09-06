@@ -9,6 +9,10 @@ from opt_einsum import contract
 
 def einsum(*args, **kwargs):
     kwargs["optimize"] = True
+    # from opt_einsum import contract_path
+    # path_info = contract_path(*args)
+    # print(path_info[1])
+    # print()
     return contract(*args, **kwargs)
 
 

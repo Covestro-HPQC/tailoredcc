@@ -17,8 +17,8 @@ def _solve_tccsd_oe(
     e_abij,
     occslice,
     virtslice,
-    max_iter=100,
-    stopping_eps=1.0e-8,
+    maxiter=100,
+    conv_tol=1.0e-8,
     diis_size=7,
     diis_start_cycle=4,
 ):
@@ -39,7 +39,7 @@ def _solve_tccsd_oe(
     mo_slices = [o.start, o.stop, v.start, v.stop]
     old_energy = cc.ccsd_energy(t1, t2, fock, g, *mo_slices)
     print(f"\tInitial CCSD energy: {old_energy}")
-    for idx in range(max_iter):
+    for idx in range(maxiter):
         start = time.time()
         singles_res = np.array(cc.singles_residual(t1, t2, fock, g, *mo_slices))
         doubles_res = np.array(cc.doubles_residual(t1, t2, fock, g, *mo_slices))
@@ -63,7 +63,7 @@ def _solve_tccsd_oe(
         current_energy = cc.ccsd_energy(new_singles, new_doubles, fock, g, *mo_slices)
         delta_e = np.abs(old_energy - current_energy)
 
-        if delta_e < stopping_eps:
+        if delta_e < conv_tol:
             print(f"\tConverged in iteration {idx}.")
             return new_singles, new_doubles
         else:

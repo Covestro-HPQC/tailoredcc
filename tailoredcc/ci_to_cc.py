@@ -12,6 +12,14 @@ config.update("jax_enable_x64", True)
 import jax
 from jax.numpy import einsum
 
+# def einsum(*args, **kwargs):
+#     from opt_einsum import contract, contract_path
+#     kwargs["optimize"] = True
+#     path_info = contract_path(*args)
+#     print(path_info[1])
+#     print()
+#     return contract(*args, **kwargs)
+
 
 def get_term_permutation(contr, virt, occ):
     """Find the permutation of the input string that brings both

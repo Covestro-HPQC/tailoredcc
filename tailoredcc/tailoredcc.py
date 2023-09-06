@@ -45,21 +45,6 @@ def tccsd_from_ci(mc: mcscf.casci.CASCI, backend="pyscf", gaussian_noise=None, *
         ci_amps = add_gaussian_noise(ci_amps, std=gaussian_noise)
     c_ia, c_ijab = amplitudes_to_spinorb(ci_amps)
 
-    if not np.allclose(mc._scf.mo_coeff, mc.mo_coeff, atol=1e-8, rtol=0):
-        raise NotImplementedError("TCC with orbitals other than HF orbitals not yet implemented.")
-        # require_hf_orbitals = ["adcc", "libcc"]
-        # if backend in require_hf_orbitals:
-        #     raise NotImplementedError(
-        #         "TCC with orbitals other than HF orbitals "
-        #         f"not yet implemented for backends: {require_hf_orbitals}."
-        #     )
-        # mc._scf.mo_coeff = mc.mo_coeff
-        # mc._scf.mo_energy = mc.mo_energy
-        # warnings.warn(
-        #     "Running with 'arbitrary' orbitals is an experimental feature! "
-        #     "Please check results carefully."
-        # )
-
     occslice, virtslice = prepare_cas_slices(nocca, noccb, nvirta, nvirtb, ncore, nvir, backend)
     return _tccsd_map[backend](mc._scf, c_ia, c_ijab, occslice, virtslice, **kwargs)
 
@@ -114,6 +99,12 @@ def tccsd_pyscf(
     virtslice: slice,
     **kwargs,
 ):
+    mo_coeff = kwargs.pop("mo_coeff", None)
+    if mo_coeff is None:
+        mo_coeff = scfres.mo_coeff
+    else:
+        print("Using provided mo_coeff")
+
     # TODO: docs, hints
     # 1. convert to T amplitudes
     t1cas, t2cas = ci_to_cluster_amplitudes(c_ia, c_ijab)
@@ -122,19 +113,31 @@ def tccsd_pyscf(
     from pyscf import cc
 
     # TODO: density fitting?
-    # TODO: provide MO coefficients (e.g., from CASSCF)
     # TODO: UCCSD
-    ccsd = cc.UCCSD(scfres)
-    # ccsd = cc.CCSD(scfres)
+    mo_coeff = (mo_coeff, mo_coeff)
+    ccsd = cc.UCCSD(scfres, mo_coeff=mo_coeff)
+    # ccsd = cc.CCSD(scfres, mo_coeff=mo_coeff)
     ccsd.max_cycle = kwargs.get("maxiter", ccsd.max_cycle)
     ccsd.verbose = kwargs.get("verbose", 4)
-    # ccsd.conv_tol = 1e-10
+    ccsd.conv_tol = kwargs.get("conv_tol", 1e-7)
     # ccsd.conv_tol_normt = 1e-8
     update_amps = ccsd.update_amps
 
     t1slice = (occslice, virtslice)
     t2slice = (occslice, occslice, virtslice, virtslice)
     _, t1guess, t2guess = ccsd.init_amps()
+
+    t1 = kwargs.pop("t1", None)
+    t2 = kwargs.pop("t2", None)
+    if t1 is not None:
+        print("t1 guess")
+        t1guess = t1
+        # del t1
+    if t2 is not None:
+        print("t2 guess")
+        t2guess = t2
+        # del t2
+
     t1guess, t2guess = set_cas_amplitudes_spatial_from_spinorb(
         t1guess, t2guess, t1cas, t2cas, t1slice, t2slice
     )
@@ -208,6 +211,9 @@ def tccsd(
     backend="libcc",
     **kwargs,
 ):
+    mo_coeff = kwargs.pop("mo_coeff", None)
+    if mo_coeff is not None:
+        raise NotImplementedError("Custom orbitals for adcc not implemented.")
     warnings.warn("TCC CAS energy using adcc is sometimes wrong if based on VQE.")
     # 1. convert to T amplitudes
     t1, t2 = ci_to_cluster_amplitudes(c_ia, c_ijab)
@@ -265,6 +271,41 @@ def tccsd(
     return ret
 
 
+def compute_integrals_custom(pyscf_molecule, pyscf_scf, mo_coeff):
+    """
+    Compute the 1-electron and 2-electron integrals.
+
+    Args:
+        pyscf_molecule: A pyscf molecule instance.
+        pyscf_scf: A PySCF "SCF" calculation object.
+
+    Returns:
+        one_electron_integrals: An N by N array storing h_{pq}
+        two_electron_integrals: An N by N by N by N array storing h_{pqrs}.
+    """
+    from functools import reduce
+
+    from pyscf import ao2mo
+
+    # Get one electrons integrals.
+    n_orbitals = mo_coeff.shape[1]
+    one_electron_compressed = reduce(np.dot, (mo_coeff.T, pyscf_scf.get_hcore(), mo_coeff))
+    one_electron_integrals = one_electron_compressed.reshape(n_orbitals, n_orbitals).astype(float)
+
+    # Get two electron integrals in compressed format.
+    two_electron_compressed = ao2mo.kernel(pyscf_molecule, mo_coeff)
+
+    two_electron_integrals = ao2mo.restore(
+        1, two_electron_compressed, n_orbitals  # no permutation symmetry
+    )
+    # See PQRS convention in OpenFermion.hamiltonians._molecular_data
+    # h[p,q,r,s] = (ps|qr)
+    two_electron_integrals = np.asarray(two_electron_integrals.transpose(0, 2, 3, 1), order="C")
+
+    # Return.
+    return one_electron_integrals, two_electron_integrals
+
+
 def tccsd_opt_einsum(
     scfres: scf.hf.SCF,
     c_ia: npt.NDArray,
@@ -277,6 +318,12 @@ def tccsd_opt_einsum(
         "This implementation based on opt_einsum is just a reference"
         " code and should not be used for production calculations."
     )
+    mo_coeff = kwargs.pop("mo_coeff", None)
+    if mo_coeff is None:
+        mo_coeff = scfres.mo_coeff
+    else:
+        print("Using provided mo_coeff")
+
     mol = scfres.mol
     # 1. convert to T amplitudes
     t1, t2 = ci_to_cluster_amplitudes(c_ia, c_ijab)
@@ -284,9 +331,7 @@ def tccsd_opt_einsum(
 
     assert_spinorb_antisymmetric(t2)
     # 2. build CCSD prerequisites
-    from openfermionpyscf._run_pyscf import compute_integrals
-
-    oei, eri_of_spatial = compute_integrals(mol, scfres)
+    oei, eri_of_spatial = compute_integrals_custom(mol, scfres, mo_coeff)
     soei, eri_of = spinorb_from_spatial(oei, eri_of_spatial)
     eri_of_asymm = eri_of - eri_of.transpose(0, 1, 3, 2)
     nocc = sum(mol.nelec)
@@ -308,11 +353,20 @@ def tccsd_opt_einsum(
     print("=> Prerequisites built.")
 
     # 3. map T amplitudes to full MO space
-    t1_mo = np.zeros((nocc, nvirt))
-    t2_mo = np.zeros((nocc, nocc, nvirt, nvirt))
+    t1_mo = np.zeros((nocc, nvirt), dtype=t1.dtype)
+    t2_mo = np.zeros((nocc, nocc, nvirt, nvirt), dtype=t2.dtype)
     t1_mo[occslice, virtslice] = t1
     t2_mo[occslice, occslice, virtslice, virtslice] = t2
     print("=> T amplitudes mapped to full MO space.")
+
+    np.set_printoptions(linewidth=np.inf)
+    print("fov max", np.max(np.abs(fock[o, v])))
+    print("fov max", np.max(np.abs(fock[v, o])))
+    print("t1 max", np.max(np.abs(t1_mo)))
+    print("transpose", np.max(np.abs(fock[o, v] - fock[v, o].T)))
+
+    print("t1 fov energy", np.einsum("ia,ai", fock[o, v], t1_mo.T))
+    # print("t1 fov energy", np.vdot(t1_mo, fock[o, v]))
 
     assert_spinorb_antisymmetric(t2_mo)
 
@@ -335,7 +389,7 @@ def tccsd_opt_einsum(
         e_abij,
         occslice,
         virtslice,
-        diis_size=8,
+        **kwargs,
     )
     # test that the T_CAS amplitudes are still intact
     t1slice = (virtslice, occslice)
@@ -399,15 +453,19 @@ def ec_cc(
     **kwargs,
 ):
     warnings.warn("This implementation based on opt_einsum is not tuned for performance.")
+    mo_coeff = kwargs.pop("mo_coeff", None)
+    if mo_coeff is None:
+        mo_coeff = scfres.mo_coeff
+    else:
+        print("Using provided mo_coeff")
+
     mol = scfres.mol
     # 1. convert to T amplitudes
     t1, t2, t3, t4 = ci_to_cc(c1, c2, c3, c4)
     # print("=> Amplitudes converted.")
 
-    # 2. build CCSD prerequisites
-    from openfermionpyscf._run_pyscf import compute_integrals
-
-    oei, eri_of_spatial = compute_integrals(mol, scfres)
+    # 2. build CC prerequisites
+    oei, eri_of_spatial = compute_integrals_custom(mol, scfres, mo_coeff)
     soei, eri_of = spinorb_from_spatial(oei, eri_of_spatial)
     eri_of_asymm = eri_of - eri_of.transpose(0, 1, 3, 2)
     nocc = sum(mol.nelec)
