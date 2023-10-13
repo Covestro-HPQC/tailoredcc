@@ -265,7 +265,7 @@ def test_ec_cc_against_fci():
     mc2.fcisolver.conv_tol = 1e-12
     mc2.canonicalization = False
     mc2.kernel()
-    ret = ec_cc_from_ci(mc2, conv_tol=1e-14, guess_t1_t2_from_ci=True)
+    ret = ec_cc_from_ci(mc2, conv_tol=1e-14, guess_t1_t2_from_ci=True, static_t3_t4=True)
     print(ret.e_tot, ret.e_tot - mc.e_tot)
 
 
@@ -290,7 +290,7 @@ def test_from_fqe_wfn():
     np.testing.assert_allclose(ret_fqe.e_tot, ret_ci.e_tot, atol=1e-9, rtol=0)
 
     # ec-CC
-    ret_fqe = ec_cc_from_fqe(scfres, wfn)
-    ret_ci = ec_cc_from_ci(mc)
+    ret_fqe = ec_cc_from_fqe(scfres, wfn, static_t3_t4=True)
+    ret_ci = ec_cc_from_ci(mc, static_t3_t4=True)
 
     np.testing.assert_allclose(ret_fqe.e_tot, ret_ci.e_tot, atol=1e-9, rtol=0)

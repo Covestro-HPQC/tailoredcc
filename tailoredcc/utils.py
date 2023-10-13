@@ -125,6 +125,7 @@ def fqe_to_pyscf(wfn, nelec: tuple):
     fqe_civec = fqe_ci.coeff.copy()
 
     if np.max(np.abs(fqe_civec.imag)) > 1e-13:
+        # raise ValueError
         warnings.warn("Complex FCI vector found in FQE.")
         max_idx = np.argmax(np.abs(fqe_civec))
         max_val = fqe_civec.flatten()[max_idx]
@@ -132,6 +133,7 @@ def fqe_to_pyscf(wfn, nelec: tuple):
         print("Maximum abs value", max_val)
         print("Global phase", global_phase)
         fqe_civec /= global_phase
+        # print(max_val, fqe_civec.flatten()[max_idx])
         fqe_civec = fqe_civec.real
         fqe_civec /= np.linalg.norm(fqe_civec)
     else:
