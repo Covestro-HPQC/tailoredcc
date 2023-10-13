@@ -196,6 +196,7 @@ class TCC:
     e_hf: float
     e_cas: float
     e_corr: float
+    converged: bool = True
 
     @property
     def e_tot(self):
@@ -421,8 +422,9 @@ def ec_cc_from_ci(mc: mcscf.casci.CASCI, **kwargs):
     #     ci_amps = add_gaussian_noise(ci_amps, std=gaussian_noise)
     ci_amps_spinorb = amplitudes_to_spinorb(ci_amps, exci=4)
 
-    if not np.allclose(mc._scf.mo_coeff, mc.mo_coeff, atol=1e-8, rtol=0):
-        raise NotImplementedError("ec-CC with orbitals other than HF orbitals not yet implemented.")
+    # if not np.allclose(mc._scf.mo_coeff, mc.mo_coeff, atol=1e-8, rtol=0):
+    #     raise NotImplementedError("ec-CC with orbitals other than HF "
+    #                               "orbitals not yet implemented.")
 
     occslice, virtslice = prepare_cas_slices(nocca, noccb, nvirta, nvirtb, ncore, nvir, "oe")
     return ec_cc(mc._scf, *ci_amps_spinorb, occslice, virtslice, **kwargs)
@@ -450,9 +452,51 @@ def ec_cc(
     guess_t1_t2_from_ci: bool = True,
     t1_guess: npt.NDArray = None,
     t2_guess: npt.NDArray = None,
+    zero_companion_threshold: float = 1e-8,
+    static_t3_t4: bool = False,
     **kwargs,
 ):
-    warnings.warn("This implementation based on opt_einsum is not tuned for performance.")
+    """Run externally corrected CC on top
+    of a PySCF HF reference and input spin-orbital
+    CI coefficients
+
+    Parameters
+    ----------
+    scfres : scf.hf.SCF
+        SCF result
+    c1 : npt.NDArray
+        C1 coefficients
+    c2 : npt.NDArray
+        C2 coefficients
+    c3 : npt.NDArray
+        C3 coefficients
+    c4 : npt.NDArray
+        C4 coefficients
+    occslice : slice
+        slice for occupied CAS orbitals
+        for mapping active orbitals to full
+        MO space
+    virtslice : slice
+        slice for virtual CAS orbitals
+        for mapping active orbitals to full
+        MO space
+    guess_t1_t2_from_ci : bool, optional
+        Use CAS T1 and T2 amplitudes as initial guess, by default True
+    t1_guess : npt.NDArray, optional
+        User-specified guess for T1, by default None
+    t2_guess : npt.NDArray, optional
+        User-specified guess for T2, by default None
+    zero_companion_threshold : float, optional
+        Set T3 and T4 amplitudes without a corresponding C3 and C4
+        companion to zero, set to None to disable, by default 1e-8
+    static_t3_t4 : bool, optional
+        Only compute T3 and T4 contributions once, by default False
+
+    Returns
+    -------
+    TCC
+        Container with results from the ec-CC computation
+    """
     mo_coeff = kwargs.pop("mo_coeff", None)
     if mo_coeff is None:
         mo_coeff = scfres.mo_coeff
@@ -461,8 +505,29 @@ def ec_cc(
 
     mol = scfres.mol
     # 1. convert to T amplitudes
-    t1, t2, t3, t4 = ci_to_cc(c1, c2, c3, c4)
-    # print("=> Amplitudes converted.")
+    t1, t2, t3, t4 = [np.array(T) for T in ci_to_cc(c1, c2, c3, c4)]
+    print("=> Amplitudes converted.")
+
+    # if requested, set the elements of T that don't
+    # have a 'companion' C amplitude to zero (ec-CC-II)
+    if zero_companion_threshold is not None:
+        t3zero = np.abs(t3) < zero_companion_threshold
+        t4zero = np.abs(t4) < zero_companion_threshold
+        t3nz_sum = np.sum(~t3zero)
+        t4nz_sum = np.sum(~t4zero)
+        print("Before:", t3nz_sum, t4nz_sum)
+
+        c3zero = np.abs(c3) < zero_companion_threshold
+        c4zero = np.abs(c4) < zero_companion_threshold
+        print(f"Using ec-CC-II with threshold {zero_companion_threshold:.2e}")
+        t3[c3zero] = 0.0
+        t4[c4zero] = 0.0
+
+        t3zero = np.abs(t3) < zero_companion_threshold
+        t4zero = np.abs(t4) < zero_companion_threshold
+        t3nz_sum = np.sum(~t3zero)
+        t4nz_sum = np.sum(~t4zero)
+        print("After:", t3nz_sum, t4nz_sum)
 
     # 2. build CC prerequisites
     oei, eri_of_spatial = compute_integrals_custom(mol, scfres, mo_coeff)
@@ -491,8 +556,9 @@ def ec_cc(
     from .solve_ec_cc import solve_ec_cc, static_t3_t4_contractions
 
     t1 = t1.T
-    t3 = t3.transpose(3, 4, 5, 0, 1, 2)
-    t4 = t4.transpose(4, 5, 6, 7, 0, 1, 2, 3)
+    t3 = np.array(t3.transpose(3, 4, 5, 0, 1, 2))
+    t4 = np.array(t4.transpose(4, 5, 6, 7, 0, 1, 2, 3))
+
     r1, r2 = static_t3_t4_contractions(t1, t3, t4, fock, eri_phys_asymm, occslice, virtslice, o, v)
     ############################
 
@@ -515,8 +581,11 @@ def ec_cc(
     r1_mo[virtslice, occslice] = r1
     r2_mo[virtslice, virtslice, occslice, occslice] = r2
 
+    if not static_t3_t4:
+        kwargs.update(dict(t3=t3, t4=t4, occslice=occslice, virtslice=virtslice))
+
     # 5. solve ec-CC projection equations
-    t1f, t2f, e_ecc = solve_ec_cc(
+    t1f, t2f, e_ecc, converged = solve_ec_cc(
         t1_mo.T,
         t2_mo.transpose(2, 3, 0, 1),
         r1_mo,
@@ -533,7 +602,7 @@ def ec_cc(
     t1f = np.array(t1f)
     t2f = np.array(t2f)
     e_corr = e_ecc - hf_energy
-    ret = TCC(scfres, t1f, t2f, hf_energy + mol.energy_nuc(), 0.0, e_corr)
+    ret = TCC(scfres, t1f, t2f, hf_energy + mol.energy_nuc(), 0.0, e_corr, converged)
     return ret
 
 

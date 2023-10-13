@@ -32,6 +32,10 @@ def solve_ec_cc(
     diis_size=7,
     diis_start_cycle=4,
     verbose=4,
+    occslice=None,
+    virtslice=None,
+    t3=None,
+    t4=None,
 ):
     # initialize diis if diis_size is not None
     # else normal iterate
@@ -46,14 +50,20 @@ def solve_ec_cc(
 
     mo_slices = [o.start, o.stop, v.start, v.stop]
     old_energy = cc.ccsd_energy(t1, t2, fock, g, *mo_slices)
+    converged = False
     if verbose > 3:
         print(f"\tInitial ec-CC energy: {old_energy}")
+    if t3 is not None and t4 is not None:
+        print("Iteratively evaluating T3/T4 terms")
     for idx in range(maxiter):
         start = time.time()
         singles_res = cc.singles_residual(t1, t2, fock, g, *mo_slices)
         doubles_res = cc.doubles_residual(t1, t2, fock, g, *mo_slices)
 
         # add the 'frozen' contributions for T3/T4 contractions
+        if t3 is not None and t4 is not None:
+            # print("Evaluating T3/T4 terms")
+            r1, r2 = static_t3_t4_contractions(t1, t3, t4, fock, g, occslice, virtslice, o, v)
         singles_res += r1
         doubles_res += r2
 
@@ -76,9 +86,10 @@ def solve_ec_cc(
         rnorm = np.linalg.norm(d1) + np.linalg.norm(d2)
 
         if np.abs(delta_e) < conv_tol:
+            converged = True
             if verbose > 3:
                 print(f"\tConverged in iteration {idx}.")
-            return new_singles, new_doubles, current_energy
+            return new_singles, new_doubles, current_energy, converged
         else:
             t1 = new_singles
             t2 = new_doubles
@@ -91,7 +102,7 @@ def solve_ec_cc(
                 )
     else:
         print("Did not converge.")
-        return new_singles, new_doubles, current_energy
+        return new_singles, new_doubles, current_energy, converged
 
 
 def static_t3_t4_contractions(t1, t3, t4, f, g, occslice, virtslice, o, v):
