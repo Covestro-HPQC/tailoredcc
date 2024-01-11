@@ -429,7 +429,7 @@ def tccsd_opt_einsum(
             + eps[n, n, n, n, o, n]
             + eps[n, n, n, n, n, o]
         )
-        from .ccsd.equations_oe import triples_residual, t_energy
+        from .ccsd.equations_oe import t_energy, triples_residual
 
         t3f = triples_residual(t1ext, t2ext, fock, eri_phys_asymm, o, v) * e_abcijk
         l1 = t1ext.transpose(1, 0)
@@ -599,9 +599,8 @@ def ec_cc(
 
     # 3. compute the constant contributions to singles/doubles
     # residual from t3, t4, t3t1 terms
-    from .solve_ec_cc import (
+    from .solve_ec_cc import (  # static_t3_t4_contractions,
         solve_ec_cc,
-        # static_t3_t4_contractions,
         static_t3_t4_contractions_subspace,
     )
 

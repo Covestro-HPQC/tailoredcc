@@ -4,6 +4,7 @@
 import time
 
 import numpy as np
+from jax import config
 
 # from opt_einsum import contract
 
@@ -16,12 +17,12 @@ import numpy as np
 #     # print()
 #     return contract(*args, **kwargs)
 
-from jax import config
 
 config.update("jax_enable_x64", True)
+from functools import partial
+
 import jax
 import jax.numpy as jnp
-from functools import partial
 
 
 def einsum(*args, optimize=None, **kwargs):

@@ -6,8 +6,8 @@ from .tailoredcc import (
     ec_cc_from_ci,
     tccsd,
     tccsd_from_ci,
-    tccsd_from_vqe,
     tccsd_from_fqe,
+    tccsd_from_vqe,
 )
 
 __all__ = [
