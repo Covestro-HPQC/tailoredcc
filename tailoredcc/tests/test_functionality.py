@@ -196,7 +196,7 @@ def scf_casci_vqe():
     mci.canonicalization = False
     mci.kernel()
     h1, ecore = mci.get_h1eff()
-    h2 = ao2mo.restore(1, mci.ao2mo(), nact)
+    h2 = ao2mo.restore(1, mci.get_h2eff(), nact)
     two_body_integrals = h2.transpose(0, 2, 3, 1)
 
     # run QNPVQE with fixed integrals
