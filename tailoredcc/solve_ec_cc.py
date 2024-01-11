@@ -4,16 +4,36 @@
 import time
 
 import numpy as np
-from opt_einsum import contract
+
+# from opt_einsum import contract
 
 
-def einsum(*args, **kwargs):
-    kwargs["optimize"] = True
-    # from opt_einsum import contract_path
-    # path_info = contract_path(*args)
-    # print(path_info[1])
-    # print()
-    return contract(*args, **kwargs)
+# def einsum(*args, **kwargs):
+#     kwargs["optimize"] = True
+#     # from opt_einsum import contract_path
+#     # path_info = contract_path(*args)
+#     # print(path_info[1])
+#     # print()
+#     return contract(*args, **kwargs)
+
+from jax import config
+
+config.update("jax_enable_x64", True)
+import jax
+import jax.numpy as jnp
+from functools import partial
+
+
+def einsum(*args, optimize=None, **kwargs):
+    if optimize is None or optimize is False:
+        result = jnp.einsum(*args, **kwargs)
+    elif optimize is True:
+        result = jnp.einsum(*args, optimize=True, **kwargs)
+    elif isinstance(optimize, list):
+        result = jnp.einsum(*args, **kwargs, optimize=optimize[1:])
+    else:
+        raise NotImplementedError(f"Handing of optimize={optimize} in jax mode not yet implemented")
+    return result
 
 
 def solve_ec_cc(
@@ -31,6 +51,7 @@ def solve_ec_cc(
     conv_tol=1.0e-8,
     diis_size=7,
     diis_start_cycle=4,
+    iterative_damping=1.0,
     verbose=4,
     occslice=None,
     virtslice=None,
@@ -63,36 +84,43 @@ def solve_ec_cc(
         # add the 'frozen' contributions for T3/T4 contractions
         if t3 is not None and t4 is not None:
             # print("Evaluating T3/T4 terms")
-            r1, r2 = static_t3_t4_contractions(t1, t3, t4, fock, g, occslice, virtslice, o, v)
+            r1, r2 = static_t3_t4_contractions(t1, t3, t4, fock, g, *mo_slices)
         singles_res += r1
         doubles_res += r2
 
-        new_singles = t1 + singles_res * e_ai
-        new_doubles = t2 + doubles_res * e_abij
+        t1new = t1 + singles_res * e_ai
+        t2new = t2 + doubles_res * e_abij
+
+        if iterative_damping < 1.0:
+            print("Damping", iterative_damping)
+            alpha = iterative_damping
+            t1new = (1 - alpha) * t1 + alpha * t1new
+            t2new *= alpha
+            t2new += (1 - alpha) * t2
 
         # diis update
         if diis_size is not None:
-            vectorized_iterate = np.hstack((new_singles.flatten(), new_doubles.flatten()))
+            vectorized_iterate = np.hstack((t1new.flatten(), t2new.flatten()))
             error_vec = old_vec - vectorized_iterate
             new_vectorized_iterate = diis_update.compute_new_vec(vectorized_iterate, error_vec)
-            new_singles = new_vectorized_iterate[:t1_dim].reshape(t1.shape)
-            new_doubles = new_vectorized_iterate[t1_dim:].reshape(t2.shape)
+            t1new = new_vectorized_iterate[:t1_dim].reshape(t1.shape)
+            t2new = new_vectorized_iterate[t1_dim:].reshape(t2.shape)
             old_vec = new_vectorized_iterate
 
-        current_energy = cc.ccsd_energy(new_singles, new_doubles, fock, g, *mo_slices)
+        current_energy = cc.ccsd_energy(t1new, t2new, fock, g, *mo_slices)
         delta_e = current_energy - old_energy
-        d1 = t1 - new_singles
-        d2 = t2 - new_doubles
+        d1 = t1 - t1new
+        d2 = t2 - t2new
         rnorm = np.linalg.norm(d1) + np.linalg.norm(d2)
 
         if np.abs(delta_e) < conv_tol:
             converged = True
             if verbose > 3:
                 print(f"\tConverged in iteration {idx}.")
-            return new_singles, new_doubles, current_energy, converged
+            return t1new, t2new, current_energy, converged
         else:
-            t1 = new_singles
-            t2 = new_doubles
+            t1 = t1new
+            t2 = t2new
             old_energy = current_energy
             if verbose > 3:
                 print(
@@ -102,10 +130,55 @@ def solve_ec_cc(
                 )
     else:
         print("Did not converge.")
-        return new_singles, new_doubles, current_energy, converged
+        return t1new, t2new, current_energy, converged
 
 
-def static_t3_t4_contractions(t1, t3, t4, f, g, occslice, virtslice, o, v):
+@partial(jax.jit, static_argnames=["o1", "o2", "v1", "v2"])
+def static_t3_t4_contractions(t1, t3, t4, f, g, o1, o2, v1, v2):
+    o = slice(o1, o2)
+    v = slice(v1, v2)
+    # oovv = (occslice, occslice, virtslice, virtslice)
+    r1 = 0.25 * einsum("kjbc,bcaikj->ai", g[o, o, v, v], t3)
+    # 	  1.0000 f(k,c)*t3(c,a,b,i,j,k)
+    r2 = 1.0 * einsum("kc,cabijk->abij", f[o, v], t3)
+    # 	  0.5000 P(i,j)<l,k||c,j>*t3(c,a,b,i,l,k)
+    contracted_intermediate = 0.5 * einsum("lkcj,cabilk->abij", g[o, o, v, o], t3)
+    r2 += 1.0 * contracted_intermediate + -1.0 * einsum("abij->abji", contracted_intermediate)
+    # 	  0.5000 P(a,b)<k,a||c,d>*t3(c,d,b,i,j,k)
+    contracted_intermediate = 0.5 * einsum("kacd,cdbijk->abij", g[o, v, v, v], t3)
+    r2 += 1.0 * contracted_intermediate + -1.0 * einsum("abij->baij", contracted_intermediate)
+    # 	  0.2500 <l,k||c,d>*t4(c,d,a,b,i,j,l,k)
+    r2 += 0.25 * einsum("lkcd,cdabijlk->abij", g[o, o, v, v], t4)
+    # 	 -1.0000 <l,k||c,d>*t1(c,k)*t3(d,a,b,i,j,l)
+    r2 += -1.0 * einsum(
+        "lkcd,ck,dabijl->abij",
+        g[o, o, v, v],
+        t1,
+        t3,
+        optimize=["einsum_path", (0, 1), (0, 1)],
+    )
+    # 	 -0.5000 P(i,j)<l,k||c,d>*t1(c,j)*t3(d,a,b,i,l,k)
+    contracted_intermediate = -0.5 * einsum(
+        "lkcd,cj,dabilk->abij",
+        g[o, o, v, v],
+        t1,
+        t3,
+        optimize=["einsum_path", (0, 1), (0, 1)],
+    )
+    r2 += 1.0 * contracted_intermediate + -1.0 * einsum("abij->abji", contracted_intermediate)
+    # 	 -0.5000 P(a,b)<l,k||c,d>*t1(a,k)*t3(c,d,b,i,j,l)
+    contracted_intermediate = -0.5 * einsum(
+        "lkcd,ak,cdbijl->abij",
+        g[o, o, v, v],
+        t1,
+        t3,
+        optimize=["einsum_path", (0, 1), (0, 1)],
+    )
+    r2 += 1.0 * contracted_intermediate + -1.0 * einsum("abij->baij", contracted_intermediate)
+    return r1, r2
+
+
+def static_t3_t4_contractions_subspace(t1, t3, t4, f, g, occslice, virtslice, o, v):
     oovv = (occslice, occslice, virtslice, virtslice)
     r1 = 0.25 * einsum("kjbc,bcaikj->ai", g[o, o, v, v][oovv], t3)
     # 	  1.0000 f(k,c)*t3(c,a,b,i,j,k)

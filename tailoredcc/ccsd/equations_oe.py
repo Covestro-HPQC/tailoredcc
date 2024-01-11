@@ -443,3 +443,103 @@ def doubles_residual_oe(t1, t2, f, g, o1, o2, v1, v2):
     )
 
     return doubles_res
+
+
+def triples_residual(t1, t2, f, g, o, v):
+    """
+     < 0 | i* j* k* c b a e(-T) H e(T) | 0>
+
+    :param t1: spin-orbital t1 amplitudes (nvirt x nocc)
+    :param t2: spin-orbital t2 amplitudes (nvirt x nvirt x nocc x nocc)
+    :param t3: spin-orbital t3 amplitudes (nvirt x nvirt x nvirt x nocc x nocc x nocc)
+    :param f: fock operator defined as soei + np.einsum('piiq->pq', astei[:, o, o, :])
+              where soei is 1 electron integrals (spinorb) and astei is
+              antisymmetric 2 electron integrals in openfermion format
+              <12|21>.  <ij|kl> - <ij|lk>
+    :param g: antisymmetric 2 electron integrals. See fock input.
+    :param o: slice(None, occ) where occ is number of occupied spin-orbitals
+    :param v: slice(occ, None) whwere occ is number of occupied spin-orbitals
+    """
+    # 	 -1.0000 P(i,j)*P(a,b)<l,a||j,k>*t2(b,c,i,l)
+    contracted_intermediate = -1.0 * einsum("lajk,bcil->abcijk", g[o, v, o, o], t2)
+    triples_res = (
+        1.00000 * contracted_intermediate
+        + -1.00000 * einsum("abcijk->abcjik", contracted_intermediate)
+        + -1.00000 * einsum("abcijk->bacijk", contracted_intermediate)
+        + 1.00000 * einsum("abcijk->bacjik", contracted_intermediate)
+    )
+
+    # 	 -1.0000 P(a,b)<l,a||i,j>*t2(b,c,k,l)
+    contracted_intermediate = -1.0 * einsum("laij,bckl->abcijk", g[o, v, o, o], t2)
+    triples_res += 1.00000 * contracted_intermediate + -1.00000 * einsum(
+        "abcijk->bacijk", contracted_intermediate
+    )
+
+    # 	 -1.0000 P(i,j)<l,c||j,k>*t2(a,b,i,l)
+    contracted_intermediate = -1.0 * einsum("lcjk,abil->abcijk", g[o, v, o, o], t2)
+    triples_res += 1.00000 * contracted_intermediate + -1.00000 * einsum(
+        "abcijk->abcjik", contracted_intermediate
+    )
+
+    # 	 -1.0000 <l,c||i,j>*t2(a,b,k,l)
+    triples_res += -1.0 * einsum("lcij,abkl->abcijk", g[o, v, o, o], t2)
+
+    # 	 -1.0000 P(j,k)*P(b,c)<a,b||d,k>*t2(d,c,i,j)
+    contracted_intermediate = -1.0 * einsum("abdk,dcij->abcijk", g[v, v, v, o], t2)
+    triples_res += (
+        1.00000 * contracted_intermediate
+        + -1.00000 * einsum("abcijk->abcikj", contracted_intermediate)
+        + -1.00000 * einsum("abcijk->acbijk", contracted_intermediate)
+        + 1.00000 * einsum("abcijk->acbikj", contracted_intermediate)
+    )
+
+    # 	 -1.0000 P(b,c)<a,b||d,i>*t2(d,c,j,k)
+    contracted_intermediate = -1.0 * einsum("abdi,dcjk->abcijk", g[v, v, v, o], t2)
+    triples_res += 1.00000 * contracted_intermediate + -1.00000 * einsum(
+        "abcijk->acbijk", contracted_intermediate
+    )
+
+    # 	 -1.0000 P(j,k)<b,c||d,k>*t2(d,a,i,j)
+    contracted_intermediate = -1.0 * einsum("bcdk,daij->abcijk", g[v, v, v, o], t2)
+    triples_res += 1.00000 * contracted_intermediate + -1.00000 * einsum(
+        "abcijk->abcikj", contracted_intermediate
+    )
+
+    # 	 -1.0000 <b,c||d,i>*t2(d,a,j,k)
+    triples_res += -1.0 * einsum("bcdi,dajk->abcijk", g[v, v, v, o], t2)
+    return triples_res
+
+
+def t_energy(l1, l2, t3, f, g, o, v):
+    """
+    E(t)
+
+
+    :param l1: transpose of spin-orbital t1 amplitudes (nocc x nvirt)
+    :param l2: transpose of spin-orbital t2 amplitudes (nocc x nocc x nvirt x nvirt)
+    :param 3: spin-orbital t3 amplitudes (nvirt x nvirt x nvirt x nocc x nocc x nocc)
+    :param f: fock operator defined as soei + np.einsum('piiq->pq', astei[:, o, o, :])
+              where soei is 1 electron integrals (spinorb) and astei is
+              antisymmetric 2 electron integrals in openfermion format
+              <12|21>.  <ij|kl> - <ij|lk>
+    :param g: antisymmetric 2 electron integrals. See fock input.
+    :param o: slice(None, occ) where occ is number of occupied spin-orbitals
+    :param v: slice(occ, None) whwere occ is number of occupied spin-orbitals
+    """
+
+    # 	  0.2500 <k,j||b,c>*l1(i,a)*t3(b,c,a,i,k,j)
+    energy = 0.25 * einsum(
+        "kjbc,ia,bcaikj", g[o, o, v, v], l1, t3, optimize=["einsum_path", (0, 2), (0, 1)]
+    )
+
+    # 	  0.2500 <l,k||c,j>*l2(i,j,b,a)*t3(c,b,a,i,l,k)
+    energy += 0.25 * einsum(
+        "lkcj,ijba,cbailk", g[o, o, v, o], l2, t3, optimize=["einsum_path", (0, 2), (0, 1)]
+    )
+
+    # 	  0.2500 <k,b||c,d>*l2(i,j,b,a)*t3(c,d,a,i,j,k)
+    energy += 0.25 * einsum(
+        "kbcd,ijba,cdaijk", g[o, v, v, v], l2, t3, optimize=["einsum_path", (0, 2), (0, 1)]
+    )
+
+    return energy

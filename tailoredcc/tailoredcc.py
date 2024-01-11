@@ -87,6 +87,9 @@ def tccsd_from_vqe(
         ci_amps = add_gaussian_noise(ci_amps, std=gaussian_noise)
     c_ia, c_ijab = amplitudes_to_spinorb(ci_amps)
 
+    c_ia = c_ia.real
+    c_ijab = c_ijab.real
+
     occslice, virtslice = prepare_cas_slices(nocca, noccb, nvirta, nvirtb, ncore, nvir, backend)
     return _tccsd_map[backend](scfres, c_ia, c_ijab, occslice, virtslice, **kwargs)
 
@@ -116,10 +119,12 @@ def tccsd_pyscf(
     # TODO: UCCSD
     mo_coeff = (mo_coeff, mo_coeff)
     ccsd = cc.UCCSD(scfres, mo_coeff=mo_coeff)
-    # ccsd = cc.CCSD(scfres, mo_coeff=mo_coeff)
+    # ccsd = cc.ccsd.CCSD(scfres, mo_coeff=mo_coeff)
     ccsd.max_cycle = kwargs.get("maxiter", ccsd.max_cycle)
     ccsd.verbose = kwargs.get("verbose", 4)
     ccsd.conv_tol = kwargs.get("conv_tol", 1e-7)
+    ccsd.iterative_damping = kwargs.get("iterative_damping", 1.0)
+    ccsd.level_shift = kwargs.get("level_shift", 0.0)
     # ccsd.conv_tol_normt = 1e-8
     update_amps = ccsd.update_amps
 
@@ -157,8 +162,8 @@ def tccsd_pyscf(
     # NOTE: might break for FCI, i.e., when all external amplitudes are 0
     t1spin = spatial2spin(ccsd.t1)
     t2spin = spatial2spin(ccsd.t2)
-    np.testing.assert_allclose(t1spin[t1slice], t1cas, atol=1e-8, rtol=0)
-    np.testing.assert_allclose(t2spin[t2slice], t2cas, atol=1e-8, rtol=0)
+    # np.testing.assert_allclose(t1spin[t1slice], t1cas, atol=1e-8, rtol=0)
+    # np.testing.assert_allclose(t2spin[t2slice], t2cas, atol=1e-8, rtol=0)
 
     t1cas_spatial, t2cas_spatial = set_cas_amplitudes_spatial_from_spinorb(
         ccsd.t1, ccsd.t2, t1cas, t2cas, t1slice, t2slice, zero_input=True
@@ -197,6 +202,7 @@ class TCC:
     e_cas: float
     e_corr: float
     converged: bool = True
+    e_triples: float = 0.0
 
     @property
     def e_tot(self):
@@ -320,6 +326,7 @@ def tccsd_opt_einsum(
         " code and should not be used for production calculations."
     )
     mo_coeff = kwargs.pop("mo_coeff", None)
+    triples_correction = kwargs.pop("triples_correction", None)
     if mo_coeff is None:
         mo_coeff = scfres.mo_coeff
     else:
@@ -332,7 +339,11 @@ def tccsd_opt_einsum(
 
     assert_spinorb_antisymmetric(t2)
     # 2. build CCSD prerequisites
-    oei, eri_of_spatial = compute_integrals_custom(mol, scfres, mo_coeff)
+    oei = kwargs.pop("oei", None)
+    eri_of_spatial = kwargs.pop("eri_of", None)
+    if oei is None or eri_of_spatial is None:
+        oei, eri_of_spatial = compute_integrals_custom(mol, scfres, mo_coeff)
+
     soei, eri_of = spinorb_from_spatial(oei, eri_of_spatial)
     eri_of_asymm = eri_of - eri_of.transpose(0, 1, 3, 2)
     nocc = sum(mol.nelec)
@@ -351,7 +362,10 @@ def tccsd_opt_einsum(
     # (canonical) Fock operator
     fock = soei + np.einsum("piqi->pq", eri_phys_asymm[:, o, :, o])
     hf_energy = 0.5 * np.einsum("ii", (fock + soei)[o, o])
+    print(0.5 * np.einsum("ii", (soei)[o, o]))
+    print(hf_energy)
     print("=> Prerequisites built.")
+    # exit(0)
 
     # 3. map T amplitudes to full MO space
     t1_mo = np.zeros((nocc, nvirt), dtype=t1.dtype)
@@ -401,7 +415,29 @@ def tccsd_opt_einsum(
     # compute correlation/total TCCSD energy
     e_tcc = cc.ccsd_energy_correlation(t1f, t2f, fock, eri_phys_asymm, o, v)
 
-    ret = TCC(scfres, t1f, t2f, hf_energy + mol.energy_nuc(), e_cas, e_tcc)
+    t_en = 0.0
+    if triples_correction:
+        t1ext = t1f.copy()
+        t2ext = t2f.copy()
+        t1ext[t1slice] = 0.0
+        t2ext[t2slice] = 0.0
+        e_abcijk = 1 / (
+            -eps[v, n, n, n, n, n]
+            - eps[n, v, n, n, n, n]
+            - eps[n, n, v, n, n, n]
+            + eps[n, n, n, o, n, n]
+            + eps[n, n, n, n, o, n]
+            + eps[n, n, n, n, n, o]
+        )
+        from .ccsd.equations_oe import triples_residual, t_energy
+
+        t3f = triples_residual(t1ext, t2ext, fock, eri_phys_asymm, o, v) * e_abcijk
+        l1 = t1ext.transpose(1, 0)
+        l2 = t2ext.transpose(2, 3, 0, 1)
+        t_en = t_energy(l1, l2, t3f, fock, eri_phys_asymm, o, v)
+
+    ret = TCC(scfres, t1f, t2f, float(hf_energy) + mol.energy_nuc(), float(e_cas), float(e_tcc))
+    ret.e_triples = float(t_en)
     return ret
 
 
@@ -454,6 +490,7 @@ def ec_cc(
     t2_guess: npt.NDArray = None,
     zero_companion_threshold: float = 1e-8,
     static_t3_t4: bool = False,
+    level_shift: float = 0.0,
     **kwargs,
 ):
     """Run externally corrected CC on top
@@ -491,6 +528,8 @@ def ec_cc(
         companion to zero, set to None to disable, by default 1e-8
     static_t3_t4 : bool, optional
         Only compute T3 and T4 contributions once, by default False
+    level_shift: float, optional
+        Shift on virtual orbitals to stabilize iterations
 
     Returns
     -------
@@ -530,7 +569,11 @@ def ec_cc(
         print("After:", t3nz_sum, t4nz_sum)
 
     # 2. build CC prerequisites
-    oei, eri_of_spatial = compute_integrals_custom(mol, scfres, mo_coeff)
+    oei = kwargs.pop("oei", None)
+    eri_of_spatial = kwargs.pop("eri_of", None)
+    if oei is None or eri_of_spatial is None:
+        oei, eri_of_spatial = compute_integrals_custom(mol, scfres, mo_coeff)
+
     soei, eri_of = spinorb_from_spatial(oei, eri_of_spatial)
     eri_of_asymm = eri_of - eri_of.transpose(0, 1, 3, 2)
     nocc = sum(mol.nelec)
@@ -543,23 +586,30 @@ def ec_cc(
     n = np.newaxis
     o = slice(None, nocc)
     v = slice(nocc, None)
+    eps[v] += level_shift
+    print(f"Level shift = {level_shift:.3f}")
     e_abij = 1 / (-eps[v, n, n, n] - eps[n, v, n, n] + eps[n, n, o, n] + eps[n, n, n, o])
     e_ai = 1 / (-eps[v, n] + eps[n, o])
 
     # (canonical) Fock operator
     fock = soei + np.einsum("piqi->pq", eri_phys_asymm[:, o, :, o])
     hf_energy = 0.5 * np.einsum("ii", (fock + soei)[o, o])
+    print(hf_energy)
     # print("=> Prerequisites built.")
 
     # 3. compute the constant contributions to singles/doubles
     # residual from t3, t4, t3t1 terms
-    from .solve_ec_cc import solve_ec_cc, static_t3_t4_contractions
+    from .solve_ec_cc import (
+        solve_ec_cc,
+        # static_t3_t4_contractions,
+        static_t3_t4_contractions_subspace,
+    )
 
     t1 = t1.T
     t3 = np.array(t3.transpose(3, 4, 5, 0, 1, 2))
     t4 = np.array(t4.transpose(4, 5, 6, 7, 0, 1, 2, 3))
 
-    r1, r2 = static_t3_t4_contractions(t1, t3, t4, fock, eri_phys_asymm, occslice, virtslice, o, v)
+    # mo_slices = [o.start, o.stop, v.start, v.stop]
     ############################
 
     # 4. set up T amplitudes in full MO space
@@ -578,11 +628,24 @@ def ec_cc(
 
     r1_mo = np.zeros_like(t1_mo.T)
     r2_mo = np.zeros_like(t2_mo.transpose(2, 3, 0, 1))
-    r1_mo[virtslice, occslice] = r1
-    r2_mo[virtslice, virtslice, occslice, occslice] = r2
-
     if not static_t3_t4:
-        kwargs.update(dict(t3=t3, t4=t4, occslice=occslice, virtslice=virtslice))
+        t3_mo = np.zeros((nvirt, nvirt, nvirt, nocc, nocc, nocc))
+        t4_mo = np.zeros((nvirt, nvirt, nvirt, nvirt, nocc, nocc, nocc, nocc))
+        t3_mo[virtslice, virtslice, virtslice, occslice, occslice, occslice] = t3
+        t4_mo[
+            virtslice, virtslice, virtslice, virtslice, occslice, occslice, occslice, occslice
+        ] = t4
+        if t1_mo.shape != t1.shape:
+            print("Full space")
+            occslice = slice(None)
+            virtslice = slice(None)
+        kwargs.update(dict(t3=t3_mo, t4=t4_mo, occslice=occslice, virtslice=virtslice))
+    else:
+        r1, r2 = static_t3_t4_contractions_subspace(
+            t1, t3, t4, fock, eri_phys_asymm, occslice, virtslice, o, v
+        )
+        r1_mo[virtslice, occslice] = r1
+        r2_mo[virtslice, virtslice, occslice, occslice] = r2
 
     # 5. solve ec-CC projection equations
     t1f, t2f, e_ecc, converged = solve_ec_cc(

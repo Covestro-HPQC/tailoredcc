@@ -4,7 +4,7 @@ import pandas as pd
 import seaborn as sns
 
 
-def civec_scatter(coeffs: dict, ax):
+def civec_scatter(coeffs: dict, ax, s=150, excilevels=None):
     assert "exact" in coeffs
     ci_coeffs = coeffs["exact"].flatten()
     sort_idx = np.argsort(np.abs(ci_coeffs))[::-1]
@@ -12,14 +12,34 @@ def civec_scatter(coeffs: dict, ax):
     # fig, ax = plt.subplots(1, 1)
     # fig.set_size_inches(18, 9)
     sorted_dict = {k: np.abs(coeff.flatten())[sort_idx] for k, coeff in coeffs.items()}
+    if excilevels is not None:
+        excilevels = excilevels.flatten()[sort_idx]
+    else:
+        excilevels = np.zeros_like(ci_coeffs)
     keys = list(sorted_dict.keys())
     vals = list(sorted_dict.values())
     df = pd.DataFrame(
-        columns=["index", *keys], data=np.vstack([np.arange(ci_coeffs.size), *vals]).T
+        columns=["index", *keys, "excitation_level"],
+        data=np.vstack([np.arange(ci_coeffs.size), *vals, excilevels]).T,
     )
     # df['coeffs_shadow'] = np.abs(civec.flatten()[sort_idx])
-    dfm = pd.melt(df, id_vars=["index"], value_vars=keys, value_name="coeff", var_name="method")
-    sns.scatterplot(x="index", y="coeff", hue="method", ax=ax, data=dfm, palette="Set2", s=150)
+    dfm = pd.melt(
+        df,
+        id_vars=["index", "excitation_level"],
+        value_vars=keys,
+        value_name="coeff",
+        var_name="method",
+    )
+    sns.scatterplot(
+        x="index",
+        y="coeff",
+        hue="excitation_level",
+        style="method",
+        ax=ax,
+        data=dfm,
+        palette="Set2",
+        s=s,
+    )
     ax.set_yscale("log")
     # ax.set_title(f"{e_tot}")
     ax.set_ylim((1e-12, 1.1))

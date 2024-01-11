@@ -7,6 +7,7 @@ from .tailoredcc import (
     tccsd,
     tccsd_from_ci,
     tccsd_from_vqe,
+    tccsd_from_fqe,
 )
 
 __all__ = [
@@ -15,5 +16,6 @@ __all__ = [
     "tccsd",
     "_solve_tccsd_oe",
     "tccsd_from_vqe",
+    "tccsd_from_fqe",
     "__version__",
 ]
