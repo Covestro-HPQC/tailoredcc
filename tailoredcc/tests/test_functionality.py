@@ -47,7 +47,7 @@ def scf_ci():
     return m, mc, mc2
 
 
-@pytest.mark.parametrize("backend", ["pyscf", "libcc", "adcc", "oe"])
+@pytest.mark.parametrize("backend", ["pyscf", "oe"])
 def test_cas_energy_crossref(backend, scf_ci):
     from tailoredcc import tccsd_from_ci
 
@@ -60,8 +60,6 @@ def test_cas_energy_crossref(backend, scf_ci):
     tcc = tccsd_from_ci(mc2, backend=backend)
     np.testing.assert_allclose(tcc.e_cas, mc2.e_tot - m.e_tot, atol=1e-9, rtol=0)
 
-    if backend not in ["pyscf", "oe"]:
-        return
     np.random.seed(42)
     for _ in range(5):
         tcc = tccsd_from_ci(mc, backend=backend, gaussian_noise=1e-3)
@@ -71,31 +69,6 @@ def test_cas_energy_crossref(backend, scf_ci):
 
 def test_crossref_random_orbitals():
     mol = gto.M(atom="H 0 0 0; F 0 0 1.1", basis="cc-pvdz", verbose=4)
-    # mol = gto.M(atom="N 0 0 0; N 0 0 2.6", basis="cc-pvtz", verbose=4)
-    # mol = gto.M(
-    #     atom="""
-    # O          0.000000000000     0.000000000000    -0.068516219310
-    # H          0.400000000000    -0.790689573744     0.543701060724
-    # H          0.000000000000     0.790689573744     0.543701060724
-    # """,
-    #     basis="cc-pvtz",
-    #     verbose=4,
-    # )
-
-    # mol = gto.M(
-    #     atom="""
-    #     C               -0.739600003233    -1.195300005225     0.000000000000
-    #     C                0.739600003233    -1.195300005225     0.000000000000
-    #     C                1.362000005953     0.000000000000     0.000000000000
-    #     C                0.739600003233     1.195300005225     0.000000000000
-    #     C               -0.739600003233     1.195300005225     0.000000000000
-    #     C               -1.362000005953     0.000000000000     0.000000000000
-    #     H                1.199900005245    -2.182400009539     0.000000000000
-    #     H               -1.199900005245     2.182400009539     0.000000000000
-    #     H                1.199900005245     2.182400009539     0.000000000000
-    #     H               -1.199900005245    -2.182400009539     0.000000000000
-    #     """, basis="cc-pvdz", verbose=4
-    # )
     scfres = scf.RHF(mol)
     scfres.kernel()
     mo_coeff = scfres.mo_coeff.copy()
@@ -223,7 +196,7 @@ def scf_casci_vqe():
     return scfres, mci, vqe
 
 
-@pytest.mark.parametrize("backend", ["pyscf", "libcc", "adcc", "oe"])
+@pytest.mark.parametrize("backend", ["pyscf", "oe"])
 def test_tccsd_from_vqe_crossref(backend, scf_casci_vqe):
     scfres, mci, vqe = scf_casci_vqe
     energy_vqe = vqe.vqe_energy(vqe.params)

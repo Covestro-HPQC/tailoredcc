@@ -13,13 +13,13 @@ import numpy.typing as npt
 from pyscf import mcscf
 from pyscf.cc.addons import spatial2spin, spin2spatial
 from pyscf.ci.cisd import tn_addrs_signs
+from pyscf.fci import cistring
 
 
 def extract_ci_amplitudes(mc: mcscf.casci.CASCI, exci=2):
     # TODO: docs
     # NOTE: adapted from https://github.com/pyscf/pyscf/blob/master/examples/ci/20-from_fci.py
     # NOTE: of uses alpha_1, beta_1, alpha_2, beta_2, ... MO ordering
-    # (aka interleaved qubit ordering),
     ncas = mc.ncas
     nocca, noccb = mc.nelecas
     if nocca != noccb:
@@ -36,7 +36,7 @@ def extract_ci_amplitudes(mc: mcscf.casci.CASCI, exci=2):
 
     ret = {}
     c0 = fcivec[0, 0]
-    ret[0] = c0
+    ret["0"] = c0
 
     if exci >= 1:
         t1addrs, t1signs = tn_addrs_signs(ncas, nocca, 1)
@@ -60,7 +60,6 @@ def extract_ci_amplitudes(mc: mcscf.casci.CASCI, exci=2):
             # order is now occa, occb, virta, virtb
             cid_ab = cid_ab.transpose(0, 2, 1, 3)
 
-        # TODO: remove index restrictions?
         ret["aa"] = cid_aa
         ret["bb"] = cid_bb
         ret["ab"] = cid_ab
@@ -106,9 +105,6 @@ def extract_vqe_singles_doubles_amplitudes(vqe: cov.vqe.ActiveSpaceChemistryVQE)
         raise NotImplementedError(
             "This VQE cannot compute overlap with computational basis states."
         )
-    # TODO: docs
-    # NOTE: of uses alpha_1, beta_1, alpha_2, beta_2, ... MO ordering
-    # (aka interleaved qubit ordering),
     ncas = vqe.nact
     nocca, noccb = vqe.nalpha, vqe.nbeta
     if nocca != noccb:
@@ -154,7 +150,7 @@ def extract_vqe_singles_doubles_amplitudes(vqe: cov.vqe.ActiveSpaceChemistryVQE)
     )
 
     c0 = vqe.compute_vqe_basis_state_overlaps(interleave_strings(hfdet, hfdet), vqe.params)[0]
-    ret = {0: c0, "a": cis_a, "b": cis_b, "aa": cid_aa, "bb": cid_bb, "ab": cid_ab}
+    ret = {'0': c0, "a": cis_a, "b": cis_b, "aa": cid_aa, "bb": cid_bb, "ab": cid_ab}
     return ret
 
 
@@ -239,7 +235,7 @@ def amplitudes_to_spinorb(amplitudes: dict, exci: int = 2):
         Dictionary with excitation amplitudes labeled
         by spin block, i.e., the key 'a' denotes a single
         excitation in the alpha block, 'ab' a double excitation
-        in alpha/beta, and the key 0 holds the coefficient of the
+        in alpha/beta, and the key '0' holds the coefficient of the
         reference determinant.
     exci : int, optional
         Maximum excitation level in the input amplitudes, by default 2
@@ -254,7 +250,7 @@ def amplitudes_to_spinorb(amplitudes: dict, exci: int = 2):
     ValueError
         If the coefficient of the reference determinant is too close to zero.
     """
-    c0 = amplitudes[0]
+    c0 = amplitudes['0']
     if np.abs(c0) < 1e-8:
         raise ValueError("Coefficient of ref. determinant is too close to zero.")
 
@@ -444,6 +440,24 @@ def ci_to_cluster_amplitudes(c_ia: npt.NDArray, c_ijab: npt.NDArray):
     t2 = c_ijab - np.einsum("ia,jb->ijab", t1, t1) + np.einsum("ib,ja->ijab", t1, t1)
     return t1, t2
 
+
+def determinant_strings(ncas, nocc, level=4):
+    from itertools import product
+    addrs_level = []
+    for l in range(level + 1):
+        addrs = cistring.addrs2str(ncas, nocc, tn_addrs_signs(ncas, nocc, l)[0])
+        addrs = np.array([bin(ad) for ad in addrs.ravel()])
+        addrs_level.append(addrs)
+
+    ret = {}
+    for la, addrsa in enumerate(addrs_level):
+        for lb, addrsb in enumerate(addrs_level):
+            if la + lb <= level:
+                label = "a"*la + "b"*lb if la + lb > 0 else "0"
+                strs_ab = product(addrsa, addrsb)
+                ret[label] = list(strs_ab)
+    return ret
+            
 
 def detstrings_singles(nocc: int, nvirt: int):
     # TODO: docs

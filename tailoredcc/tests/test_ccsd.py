@@ -8,7 +8,6 @@ from adcc import block as b
 from pyscf import cc, gto, scf
 
 from tailoredcc import ccsd
-from tailoredcc.ccsd.equations_adcc import CCSDIntermediates
 from tailoredcc.tailoredcc import solve_tccsd
 from tailoredcc.utils import (
     spin_blocks_interleaved_to_sequential,
