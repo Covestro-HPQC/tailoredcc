@@ -19,7 +19,6 @@ An implementation of DIIS acceleration for CC codes.
 """
 from itertools import product
 
-import adcc
 import numpy as np
 
 
@@ -64,10 +63,7 @@ class DIIS:
         c = np.linalg.solve(b_mat, rhs)
 
         # construct new iterate  from solution to diis ax=b and previous vecs.
-        if isinstance(self.prev_vecs[-1], adcc.AmplitudeVector):
-            new_iterate = self.prev_vecs[-1].zeros_like()
-        else:
-            new_iterate = np.zeros_like(self.prev_vecs[0])
+        new_iterate = np.zeros_like(self.prev_vecs[0])
         c = c.squeeze()
         for ii in range(len(self.prev_vecs)):
             new_iterate += c[ii] * self.prev_vecs[ii]
@@ -97,8 +93,6 @@ class DIIS:
         :param e1: error vec1
         :param e2: erorr vec2
         """
-        if isinstance(e1, adcc.AmplitudeVector) and isinstance(e2, adcc.AmplitudeVector):
-            return e1.dot(e2)
         if len(e1.shape) == 1 and len(e2.shape) == 1:
             return e1.dot(e2)
         elif e1.shape[1] == 1 and e2.shape[1] == 1:
