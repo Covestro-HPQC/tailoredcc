@@ -150,7 +150,7 @@ def extract_vqe_singles_doubles_amplitudes(vqe: cov.vqe.ActiveSpaceChemistryVQE)
     )
 
     c0 = vqe.compute_vqe_basis_state_overlaps(interleave_strings(hfdet, hfdet), vqe.params)[0]
-    ret = {'0': c0, "a": cis_a, "b": cis_b, "aa": cid_aa, "bb": cid_bb, "ab": cid_ab}
+    ret = {"0": c0, "a": cis_a, "b": cis_b, "aa": cid_aa, "bb": cid_bb, "ab": cid_ab}
     return ret
 
 
@@ -250,7 +250,7 @@ def amplitudes_to_spinorb(amplitudes: dict, exci: int = 2):
     ValueError
         If the coefficient of the reference determinant is too close to zero.
     """
-    c0 = amplitudes['0']
+    c0 = amplitudes["0"]
     if np.abs(c0) < 1e-8:
         raise ValueError("Coefficient of ref. determinant is too close to zero.")
 
@@ -443,6 +443,7 @@ def ci_to_cluster_amplitudes(c_ia: npt.NDArray, c_ijab: npt.NDArray):
 
 def determinant_strings(ncas, nocc, level=4):
     from itertools import product
+
     addrs_level = []
     for l in range(level + 1):
         addrs = cistring.addrs2str(ncas, nocc, tn_addrs_signs(ncas, nocc, l)[0])
@@ -453,11 +454,11 @@ def determinant_strings(ncas, nocc, level=4):
     for la, addrsa in enumerate(addrs_level):
         for lb, addrsb in enumerate(addrs_level):
             if la + lb <= level:
-                label = "a"*la + "b"*lb if la + lb > 0 else "0"
+                label = "a" * la + "b" * lb if la + lb > 0 else "0"
                 strs_ab = product(addrsa, addrsb)
                 ret[label] = list(strs_ab)
     return ret
-            
+
 
 def detstrings_singles(nocc: int, nvirt: int):
     # TODO: docs
@@ -588,14 +589,7 @@ def set_cas_amplitudes_spatial_from_spinorb(
 def prepare_cas_slices(
     nocca: int, noccb: int, nvirta: int, nvirtb: int, ncore: int, nvir: int, backend: str
 ):
-    if backend in ["adcc", "libcc"]:
-        occaslice = np.arange(ncore, ncore + nocca, 1)
-        occbslice = np.arange(2 * ncore + nocca, 2 * ncore + nocca + noccb)
-        virtaslice = np.arange(0, nvirta, 1)
-        virtbslice = np.arange(nvirta + nvir, nvirta + nvir + nvirtb, 1)
-        occslice = np.concatenate((occaslice, occbslice), axis=0)
-        virtslice = np.concatenate((virtaslice, virtbslice), axis=0)
-    elif backend in ["oe", "pyscf"]:
+    if backend in ["oe", "pyscf"]:
         occslice = slice(2 * ncore, 2 * ncore + nocca + noccb)
         virtslice = slice(0, nvirta + nvirtb)
     else:

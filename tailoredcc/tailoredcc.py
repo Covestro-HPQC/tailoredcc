@@ -209,75 +209,6 @@ class TCC:
         return self.e_hf + self.e_corr
 
 
-def tccsd(
-    scfres: scf.hf.SCF,
-    c_ia: npt.NDArray,
-    c_ijab: npt.NDArray,
-    occslice: npt.NDArray,
-    virtslice: npt.NDArray,
-    backend="libcc",
-    **kwargs,
-):
-    mo_coeff = kwargs.pop("mo_coeff", None)
-    if mo_coeff is not None:
-        raise NotImplementedError("Custom orbitals for adcc not implemented.")
-    warnings.warn("TCC CAS energy using adcc is sometimes wrong if based on VQE.")
-    # 1. convert to T amplitudes
-    t1, t2 = ci_to_cluster_amplitudes(c_ia, c_ijab)
-    t1 = spin_blocks_interleaved_to_sequential(t1)
-    t2 = spin_blocks_interleaved_to_sequential(t2)
-    print("=> Amplitudes converted.")
-    # assert_spinorb_antisymmetric(t2)
-
-    mol = scfres.mol
-    nocc = sum(mol.nelec)
-    nvirt = 2 * mol.nao_nr() - nocc
-
-    import adcc
-
-    from .ccsd import DISPATCH
-
-    cc = DISPATCH[backend]
-
-    hf = adcc.ReferenceState(scfres)
-    hf_energy = hf.energy_scf
-    mp = adcc.LazyMp(hf)
-    print("=> Prerequisites built.")
-
-    # 2. map T amplitudes to full MO space
-    t1_mo = np.zeros((nocc, nvirt))
-    t2_mo = np.zeros((nocc, nocc, nvirt, nvirt))
-
-    t1slice = np.ix_(occslice, virtslice)
-    t2slice = np.ix_(occslice, occslice, virtslice, virtslice)
-    t1_mo[t1slice] = t1
-    t2_mo[t2slice] = t2
-    print("=> T amplitudes mapped to full MO space.")
-
-    # assert_spinorb_antisymmetric(t2_mo)
-
-    tguess = adcc.AmplitudeVector(ov=hf.fov.zeros_like(), oovv=mp.t2oo.zeros_like())
-    tguess.ov.set_from_ndarray(t1_mo, 1e-12)
-    tguess.oovv.set_from_ndarray(t2_mo, 1e-12)
-
-    e_cas = cc.ccsd_energy_correlation(mp, tguess)
-    print(f"CCSD correlation energy from CI amplitudes {e_cas:>12}")
-
-    # solve tccsd amplitude equations
-    t = solve_tccsd(mp, occslice, virtslice, tguess, backend=backend, diis_size=8)
-    t1f = t.ov
-    t2f = t.oovv
-    # test that the T_CAS amplitudes are still intact
-    np.testing.assert_allclose(t1, t1f.to_ndarray()[t1slice], atol=1e-12, rtol=0)
-    np.testing.assert_allclose(t2, t2f.to_ndarray()[t2slice], atol=1e-12, rtol=0)
-
-    # compute correlation/total TCCSD energy
-    e_tcc = cc.ccsd_energy_correlation(mp, t)
-
-    ret = TCC(scfres, t1f, t2f, hf_energy, e_cas, e_tcc)
-    return ret
-
-
 def compute_integrals_custom(pyscf_molecule, pyscf_scf, mo_coeff):
     """
     Compute the 1-electron and 2-electron integrals.
@@ -669,8 +600,6 @@ def ec_cc(
 
 
 _tccsd_map: Dict[str, Callable] = {
-    "adcc": partial(tccsd, backend="adcc"),
-    "libcc": partial(tccsd, backend="libcc"),
     "oe": tccsd_opt_einsum,
     "pyscf": tccsd_pyscf,
 }

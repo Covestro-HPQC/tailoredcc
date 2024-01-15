@@ -2,8 +2,8 @@
 # Covestro Deutschland AG, 2023
 
 import tempfile
-from itertools import permutations, product
 from collections import defaultdict
+from itertools import permutations, product
 from shutil import which
 
 import numpy as np
@@ -71,7 +71,8 @@ def test_determinant_string_generation(nocc, ncas):
 
 @pytest.fixture(scope="module")
 def scf_ci():
-    from pyscf import gto, scf, mcscf
+    from pyscf import gto, mcscf, scf
+
     mol = gto.Mole()
     mol.build(
         verbose=4,
@@ -107,24 +108,25 @@ def scf_ci():
 
     return m, mc, mc2
 
+
 def test_determinant_strings_new(scf_ci):
     from tailoredcc.amplitudes import determinant_strings, extract_ci_amplitudes
+
     scfres, mc, mc2 = scf_ci
     ncas, nelec = mc2.ncas, sum(mc2.nelecas)
-    
+
     dets = determinant_strings(ncas, nelec // 2, level=2)
     civec = mc2.ci
-    
+
     ret = defaultdict(list)
     for exci, str_tuples in dets.items():
         for str_tuple in str_tuples:
             addr = tuple(cistring.str2addr(ncas, nelec // 2, st) for st in str_tuple)
             ret[exci].append(civec[addr])
-            
-    
+
     amp_dict_ref = extract_ci_amplitudes(mc2)
     assert ret.keys() == amp_dict_ref.keys()
-    
+
     for exci in ret:
         ref = amp_dict_ref[exci].flatten()
         r = np.array(ret[exci])
@@ -177,7 +179,7 @@ def test_amplitudes_to_spinorb(nocc, nvirt):
     cid_aa = np.random.randn(dsz)
     cid_bb = np.random.randn(dsz)
     cid_ab = np.random.randn(nocc, nocc, nvirt, nvirt)
-    amps = {'0': c0, "a": cis_a, "b": cis_b, "aa": cid_aa, "ab": cid_ab, "bb": cid_bb}
+    amps = {"0": c0, "a": cis_a, "b": cis_b, "aa": cid_aa, "ab": cid_ab, "bb": cid_bb}
     c_ia, c_ijab = amplitudes_to_spinorb(amps, exci=2)
 
     cid_aa_full = remove_index_restriction_doubles(cid_aa, nocc, nvirt)
