@@ -13,7 +13,7 @@ test:
     - micromamba activate gitlab-ci
     # manually install pkgs from COV quantum computing software stack
     - pip install git+https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.covestro.com/quantum-computing/covvqetools -v
-    # NOTE: parsec needs OpenBLAS, but adcc & friends need MKL
+    # NOTE: parsec needs OpenBLAS
     - export OPENBLAS_LIB=${CONDA_PREFIX}/lib/libopenblas.so
     - pip install git+https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.covestro.com/quantum-computing/parsec -v
     # install pkg

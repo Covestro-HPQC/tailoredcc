@@ -5,10 +5,8 @@ dependencies:
   # Build
   - git
   - openssh
-  - libblas =*=*mkl  # for adcc & friends
   - python =3.9
   - pip
-  - adcc
   # parsec build deps
   - cxx-compiler
   - make
