@@ -3,7 +3,6 @@
 
 import warnings
 from dataclasses import dataclass
-from functools import partial
 from typing import Any, Callable, Dict
 
 import covvqetools as cov
@@ -24,8 +23,8 @@ from .amplitudes import (
     prepare_cas_slices,
     set_cas_amplitudes_spatial_from_spinorb,
 )
-from .solve_tcc import _solve_tccsd_oe, solve_tccsd
-from .utils import spin_blocks_interleaved_to_sequential, spinorb_from_spatial
+from .solve_tcc import _solve_tccsd_oe
+from .utils import spinorb_from_spatial
 
 
 def tccsd_from_ci(mc: mcscf.casci.CASCI, backend="pyscf", gaussian_noise=None, **kwargs) -> Any:
