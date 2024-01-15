@@ -27,7 +27,6 @@ dependencies = [
     "openfermionpyscf",
     "opt_einsum",
     "jax",
-    "covvqetools @ git+ssh://git@gitlab.ssh.covestro.com/quantum-computing/covvqetools@master",
 ]
 
 # Update the urls once the hosting is set up.
