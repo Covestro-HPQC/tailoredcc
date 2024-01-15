@@ -22,7 +22,7 @@ def einsum(*args, optimize=None, **kwargs):
     return result
 
 
-def ccsd_energy_correlation_oe(t1, t2, f, g, o, v):
+def ccsd_energy_correlation(t1, t2, f, g, o, v):
     """
     < 0 | e(-T) H e(T) | 0> :
     :param f:
@@ -55,7 +55,7 @@ def ccsd_energy_correlation_oe(t1, t2, f, g, o, v):
 
 
 @partial(jax.jit, static_argnames=["o1", "o2", "v1", "v2"])
-def ccsd_energy_oe(t1, t2, f, g, o1, o2, v1, v2):
+def ccsd_energy(t1, t2, f, g, o1, o2, v1, v2):
     """
     < 0 | e(-T) H e(T) | 0> :
     :param f:
@@ -89,7 +89,7 @@ def ccsd_energy_oe(t1, t2, f, g, o1, o2, v1, v2):
 
 
 @partial(jax.jit, static_argnames=["o1", "o2", "v1", "v2"])
-def singles_residual_oe(t1, t2, f, g, o1, o2, v1, v2):
+def singles_residual(t1, t2, f, g, o1, o2, v1, v2):
     """
     < 0 | m* e e(-T) H e(T) | 0>
     :param f:
@@ -166,7 +166,7 @@ def singles_residual_oe(t1, t2, f, g, o1, o2, v1, v2):
 
 
 @partial(jax.jit, static_argnames=["o1", "o2", "v1", "v2"])
-def doubles_residual_oe(t1, t2, f, g, o1, o2, v1, v2):
+def doubles_residual(t1, t2, f, g, o1, o2, v1, v2):
     """
      < 0 | m* n* f e e(-T) H e(T) | 0>
     :param f:

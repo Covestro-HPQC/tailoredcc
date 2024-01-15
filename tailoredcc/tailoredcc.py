@@ -23,7 +23,7 @@ from .amplitudes import (
     prepare_cas_slices,
     set_cas_amplitudes_spatial_from_spinorb,
 )
-from .solve_tcc import _solve_tccsd_oe
+from .solve_tcc import solve_tccsd_oe
 from .utils import spinorb_from_spatial
 
 
@@ -315,7 +315,7 @@ def tccsd_opt_einsum(
 
     assert_spinorb_antisymmetric(t2_mo)
 
-    from .ccsd import oe as cc
+    from .ccsd import equations_oe as cc
 
     e_cas = cc.ccsd_energy_correlation(
         t1_mo.T, t2_mo.transpose(2, 3, 0, 1), fock, eri_phys_asymm, o, v
@@ -323,7 +323,7 @@ def tccsd_opt_einsum(
     print(f"CCSD correlation energy from CI amplitudes {e_cas:>12}")
 
     # solve tccsd amplitude equations
-    t1f, t2f = _solve_tccsd_oe(
+    t1f, t2f = solve_tccsd_oe(
         t1_mo.T,
         t2_mo.transpose(2, 3, 0, 1),
         fock,

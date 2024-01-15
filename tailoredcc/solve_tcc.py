@@ -6,7 +6,7 @@ import time
 import numpy as np
 
 
-def _solve_tccsd_oe(
+def solve_tccsd_oe(
     t1,
     t2,
     fock,
@@ -34,7 +34,7 @@ def _solve_tccsd_oe(
         t1_dim = t1.size
         old_vec = np.hstack((t1.flatten(), t2.flatten()))
 
-    from .ccsd import oe as cc
+    from .ccsd import equations_oe as cc
 
     mo_slices = [o.start, o.stop, v.start, v.stop]
     old_energy = cc.ccsd_energy(t1, t2, fock, g, *mo_slices)
