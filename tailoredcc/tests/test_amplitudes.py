@@ -110,7 +110,11 @@ def scf_ci():
 
 
 def test_determinant_strings_new(scf_ci):
-    from tailoredcc.amplitudes import determinant_strings, extract_ci_amplitudes
+    from tailoredcc.amplitudes import (
+        determinant_strings,
+        extract_ci_amplitudes,
+        extract_from_dict,
+    )
 
     scfres, mc, mc2 = scf_ci
     ncas, nelec = mc2.ncas, sum(mc2.nelecas)
@@ -123,14 +127,18 @@ def test_determinant_strings_new(scf_ci):
         for str_tuple in str_tuples:
             addr = tuple(cistring.str2addr(ncas, nelec // 2, st) for st in str_tuple)
             ret[exci].append(civec[addr])
+        ret[exci] = np.asarray(ret[exci])
+
+    ret = extract_from_dict(ret, ncas, nelec // 2, nelec // 2, exci=2)
 
     amp_dict_ref = extract_ci_amplitudes(mc2)
     assert ret.keys() == amp_dict_ref.keys()
 
     for exci in ret:
-        ref = amp_dict_ref[exci].flatten()
-        r = np.array(ret[exci])
+        ref = amp_dict_ref[exci]
+        r = ret[exci]
         print(exci, np.allclose(abs(ref), abs(r), atol=1e-14, rtol=0))
+        np.testing.assert_allclose(ref, r, atol=1e-14, rtol=0)
 
 
 @pytest.mark.parametrize(

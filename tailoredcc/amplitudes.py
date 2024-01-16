@@ -100,6 +100,32 @@ def extract_ci_amplitudes(mc: mcscf.casci.CASCI, exci=2):
     return ret
 
 
+def extract_from_dict(overlaps, ncas, nocca, noccb, exci=2):
+    if exci > 2:
+        raise NotImplementedError("Dictionary input only implemented " "up to double excitations.")
+    nvirta = ncas - nocca
+    nvirtb = ncas - noccb
+    # sign changes (true vacuum -> Fermi vacuum)
+    _, t1signs = tn_addrs_signs(ncas, nocca, 1)
+    _, t2signs = tn_addrs_signs(ncas, nocca, 2)
+
+    cis_a = overlaps["a"] * t1signs
+    cis_b = overlaps["b"] * t1signs
+    cis_a = cis_a.reshape(nocca, nvirta)
+    cis_b = cis_b.reshape(noccb, nvirtb)
+
+    cid_ab = overlaps["ab"].reshape(nocca * nvirta, noccb * nvirtb)
+    cid_ab = np.einsum("ij,i,j->ij", cid_ab, t1signs, t1signs)
+    cid_ab = cid_ab.reshape(nocca, nvirta, noccb, nvirtb).transpose(0, 2, 1, 3)
+
+    cid_aa = overlaps["aa"] * t2signs
+    cid_bb = overlaps["bb"] * t2signs
+
+    c0 = overlaps["0"]
+    ret = {"0": c0, "a": cis_a, "b": cis_b, "aa": cid_aa, "bb": cid_bb, "ab": cid_ab}
+    return ret
+
+
 def extract_vqe_singles_doubles_amplitudes(vqe: cov.vqe.ActiveSpaceChemistryVQE):
     if not hasattr(vqe, "compute_vqe_basis_state_overlaps"):
         raise NotImplementedError(
@@ -115,43 +141,36 @@ def extract_vqe_singles_doubles_amplitudes(vqe: cov.vqe.ActiveSpaceChemistryVQE)
     nvirtb = ncas - noccb
     assert nvirta == nvirtb
 
-    # get the singly/doubly excited det addresses
-    # and the corresponding sign changes (true vacuum -> Fermi vacuum)
-    _, t1signs = tn_addrs_signs(ncas, nocca, 1)
-    _, t2signs = tn_addrs_signs(ncas, nocca, 2)
+    dets_tccsd = determinant_strings(ncas, nocca, level=2)
 
-    hfdet = np.zeros(ncas, dtype=int)
-    hfdet[:nocca] = 1
-    _, detsa = detstrings_singles(nocca, nvirta)
-    _, detsaa = detstrings_doubles(nocca, nvirta)
+    def interleave_bits(int1, int2):
+        # Determine the maximum length of the bit strings
+        max_length = max(int1.bit_length(), int2.bit_length())
+        # Initialize the result
+        result = 0
+        # Interleave the bits
+        for i in range(max_length):
+            # Extract the i-th bit from each integer
+            bit1 = (int1 >> i) & 1
+            bit2 = (int2 >> i) & 1
+            # Interleave the bits and add them to the result
+            result |= (bit2 << (2 * i + 1)) | (bit1 << (2 * i))
+        return result
 
-    cis_a = (
-        vqe.compute_vqe_basis_state_overlaps(interleave_strings(detsa, hfdet), vqe.params) * t1signs
-    )
-    cis_b = (
-        vqe.compute_vqe_basis_state_overlaps(interleave_strings(hfdet, detsa), vqe.params) * t1signs
-    )
-    cis_a = cis_a.reshape(nocca, nvirta)
-    cis_b = cis_b.reshape(noccb, nvirtb)
-
-    cid_ab = vqe.compute_vqe_basis_state_overlaps(
-        interleave_strings(detsa, detsa), vqe.params
-    ).reshape(nocca * nvirta, noccb * nvirtb)
-    cid_ab = np.einsum("ij,i,j->ij", cid_ab, t1signs, t1signs)
-    cid_ab = cid_ab.reshape(nocca, nvirta, noccb, nvirtb).transpose(0, 2, 1, 3)
-
-    cid_aa = (
-        vqe.compute_vqe_basis_state_overlaps(interleave_strings(detsaa, hfdet), vqe.params)
-        * t2signs
-    )
-    cid_bb = (
-        vqe.compute_vqe_basis_state_overlaps(interleave_strings(hfdet, detsaa), vqe.params)
-        * t2signs
-    )
-
-    c0 = vqe.compute_vqe_basis_state_overlaps(interleave_strings(hfdet, hfdet), vqe.params)[0]
-    ret = {"0": c0, "a": cis_a, "b": cis_b, "aa": cid_aa, "bb": cid_bb, "ab": cid_ab}
-    return ret
+    overlaps = {}
+    for key, dets in dets_tccsd.items():
+        # exci = 0 if key == "0" else len(key)
+        ret = []
+        for d in dets:
+            id = interleave_bits(int(d[0], 2), int(d[1], 2))
+            detstring = bin(id)[2:][::-1]
+            diff = 2 * ncas - len(detstring)
+            if diff > 0:
+                detstring += diff * "0"
+            overlap = vqe.compute_vqe_basis_state_overlaps([detstring], vqe.params)[0]
+            ret.append(overlap)
+        overlaps[key] = np.asarray(ret)
+    return extract_from_dict(overlaps, ncas, nocca, noccb)
 
 
 def remove_index_restriction_doubles(cid_aa: npt.NDArray, nocc: int, nvirt: int):
