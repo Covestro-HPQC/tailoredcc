@@ -60,12 +60,6 @@ def test_cas_energy_crossref(backend, scf_ci):
     tcc = tccsd_from_ci(mc2, backend=backend)
     np.testing.assert_allclose(tcc.e_cas, mc2.e_tot - m.e_tot, atol=1e-9, rtol=0)
 
-    np.random.seed(42)
-    for _ in range(5):
-        tcc = tccsd_from_ci(mc, backend=backend, gaussian_noise=1e-3)
-        with pytest.raises(AssertionError):
-            np.testing.assert_allclose(tcc.e_cas, mc.e_tot - m.e_tot, atol=1e-5, rtol=0)
-
 
 def test_crossref_random_orbitals():
     mol = gto.M(atom="H 0 0 0; F 0 0 1.1", basis="cc-pvdz", verbose=4)

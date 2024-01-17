@@ -2,7 +2,6 @@
 # Covestro Deutschland AG, 2023
 import operator
 from collections import defaultdict
-from functools import partial
 from itertools import combinations_with_replacement, permutations, product
 from math import factorial
 from typing import Dict, Tuple, Union
@@ -195,22 +194,16 @@ def extract_vqe_singles_doubles_amplitudes(vqe: cov.vqe.ActiveSpaceChemistryVQE)
     dets_tccsd = determinant_strings(ncas, nocca, level=2)
 
     def interleave_bits(int1, int2):
-        # Determine the maximum length of the bit strings
         max_length = max(int1.bit_length(), int2.bit_length())
-        # Initialize the result
         result = 0
-        # Interleave the bits
         for i in range(max_length):
-            # Extract the i-th bit from each integer
             bit1 = (int1 >> i) & 1
             bit2 = (int2 >> i) & 1
-            # Interleave the bits and add them to the result
             result |= (bit2 << (2 * i + 1)) | (bit1 << (2 * i))
         return result
 
     overlaps = {}
     for key, dets in dets_tccsd.items():
-        # exci = 0 if key == "0" else len(key)
         ret = []
         for d in dets:
             id = interleave_bits(int(d[0], 2), int(d[1], 2))
@@ -494,18 +487,17 @@ def check_amplitudes_spinorb(tt, exci=2, check_spin_forbidden_blocks=True):
                 np.testing.assert_allclose(view, np.zeros_like(view), atol=1e-14, rtol=0)
 
 
-def add_gaussian_noise(
-    ci_amps: dict,
-    std: float = 1e-12,
-):
-    noise = partial(np.random.normal, loc=0.0, scale=std)
-    ci_amps_np = {k: np.atleast_1d(v) for k, v in ci_amps.items()}
-    ret = {k: x + noise(size=x.shape) for k, x in ci_amps_np.items()}
-    return ret
+# def add_gaussian_noise(
+#     ci_amps: dict,
+#     std: float = 1e-12,
+# ):
+#     noise = partial(np.random.normal, loc=0.0, scale=std)
+#     ci_amps_np = {k: np.atleast_1d(v) for k, v in ci_amps.items()}
+#     ret = {k: x + noise(size=x.shape) for k, x in ci_amps_np.items()}
+#     return ret
 
 
 def ci_to_cluster_amplitudes(c_ia: npt.NDArray, c_ijab: npt.NDArray):
-    # TODO: docs
     t1 = c_ia.copy()
     t2 = c_ijab - np.einsum("ia,jb->ijab", t1, t1) + np.einsum("ib,ja->ijab", t1, t1)
     return t1, t2

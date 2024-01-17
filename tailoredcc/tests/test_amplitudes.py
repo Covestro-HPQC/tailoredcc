@@ -12,7 +12,6 @@ from pyscf.fci import cistring
 from tqdm import tqdm
 
 from tailoredcc.amplitudes import (
-    add_gaussian_noise,
     amplitudes_to_spinorb,
     assert_spinorb_antisymmetric,
     check_amplitudes_spinorb,
@@ -194,10 +193,6 @@ def test_amplitude_extraction_and_norms():
     assert number_overlaps_eccc(ncas, *nelec) == sum(
         np.atleast_1d(c).size for _, c in ci_amps.items()
     )
-    # test that noise is correctly added to all amplitudes
-    ci_noisy = add_gaussian_noise(ci_amps, std=1e-3)
-    for k, v in ci_noisy.items():
-        assert np.allclose(v, ci_amps[k], atol=1e-5, rtol=0) is False
 
     # print("Amplitudes extracted.")
     # check_amplitudes_spinorb(c2, 2)

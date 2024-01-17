@@ -14,7 +14,6 @@ from pyscf.cc.addons import spatial2spin
 from tailoredcc.ci_to_cc import ci_to_cc
 
 from .amplitudes import (
-    add_gaussian_noise,
     amplitudes_to_spinorb,
     assert_spinorb_antisymmetric,
     ci_to_cluster_amplitudes,
@@ -27,7 +26,7 @@ from .solve_tcc import solve_tccsd_oe
 from .utils import spinorb_from_spatial
 
 
-def tccsd_from_ci(mc: mcscf.casci.CASCI, backend="pyscf", gaussian_noise=None, **kwargs) -> Any:
+def tccsd_from_ci(mc: mcscf.casci.CASCI, backend="pyscf", **kwargs) -> Any:
     # TODO: docs
     nocca, noccb = mc.nelecas
     assert nocca == noccb
@@ -40,8 +39,6 @@ def tccsd_from_ci(mc: mcscf.casci.CASCI, backend="pyscf", gaussian_noise=None, *
     nvir = mc.mo_coeff.shape[1] - ncore - ncas
 
     ci_amps = extract_ci_amplitudes(mc, exci=2)
-    if gaussian_noise is not None:
-        ci_amps = add_gaussian_noise(ci_amps, std=gaussian_noise)
     c_ia, c_ijab = amplitudes_to_spinorb(ci_amps)
 
     occslice, virtslice = prepare_cas_slices(nocca, noccb, nvirta, nvirtb, ncore, nvir, backend)
@@ -52,20 +49,18 @@ def tccsd_from_fqe(
     scfres: scf.hf.SCF,
     wfn,
     backend="pyscf",
-    gaussian_noise=None,
     **kwargs,
 ):
     from .utils import fqe_to_fake_ci
 
     mc = fqe_to_fake_ci(wfn, scfres, sz=0)
-    return tccsd_from_ci(mc, backend=backend, gaussian_noise=gaussian_noise, **kwargs)
+    return tccsd_from_ci(mc, backend=backend, **kwargs)
 
 
 def tccsd_from_vqe(
     scfres: scf.hf.SCF,
     vqe: cov.vqe.ActiveSpaceChemistryVQE,
     backend="pyscf",
-    gaussian_noise=None,
     **kwargs,
 ):
     # TODO: docs, type hints
@@ -82,8 +77,6 @@ def tccsd_from_vqe(
     nvir = scfres.mo_coeff.shape[1] - ncore - ncas
 
     ci_amps = extract_vqe_singles_doubles_amplitudes(vqe)
-    if gaussian_noise is not None:
-        ci_amps = add_gaussian_noise(ci_amps, std=gaussian_noise)
     c_ia, c_ijab = amplitudes_to_spinorb(ci_amps)
 
     c_ia = c_ia.real
@@ -384,8 +377,6 @@ def ec_cc_from_ci(mc: mcscf.casci.CASCI, **kwargs):
     nvir = mc.mo_coeff.shape[1] - ncore - ncas
 
     ci_amps = extract_ci_amplitudes(mc, exci=4)
-    # if gaussian_noise is not None:
-    #     ci_amps = add_gaussian_noise(ci_amps, std=gaussian_noise)
     ci_amps_spinorb = amplitudes_to_spinorb(ci_amps, exci=4)
 
     # if not np.allclose(mc._scf.mo_coeff, mc.mo_coeff, atol=1e-8, rtol=0):
