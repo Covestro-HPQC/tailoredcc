@@ -5,7 +5,7 @@ from collections import defaultdict
 from functools import partial
 from itertools import combinations_with_replacement, permutations, product
 from math import factorial
-from typing import Tuple, Union
+from typing import Dict, Tuple, Union
 
 import covvqetools as cov
 import numpy as np
@@ -16,15 +16,33 @@ from pyscf.ci.cisd import tn_addrs_signs
 from pyscf.fci import cistring
 
 
-def extract_ci_amplitudes(mc: mcscf.casci.CASCI, exci=2):
-    # TODO: docs
+def extract_ci_amplitudes(mc: mcscf.casci.CASCI, exci=2) -> Dict[str, npt.NDArray]:
+    """Extract CI amplidutes from a PySCF CASCI object up to a certain excitation level.
+    The signs of the CI amplitudes are converted from true vacuum to Fermi vacuum convention.
+
+    Parameters
+    ----------
+    mc : mcscf.casci.CASCI
+        CASCI object with a converged CI vector
+    exci : int, optional
+        maximum excitation level, by default 2
+
+    Returns
+    -------
+    Dict[str, npt.NDArray]
+        Dictionary with spin block labels
+        (alpha -> `"a"`, alpha/beta -> `"ab"`)
+        as keys and CI amplitudes as values.
+        The axes of the amplitudes are sorted by occupied/virtual and
+        alpha/beta, i.e., the `"ab"` block axes are occ-alpha, occ-beta,
+        virt-alpha, virt-beta.
+    """
     # NOTE: adapted from https://github.com/pyscf/pyscf/blob/master/examples/ci/20-from_fci.py
-    # NOTE: of uses alpha_1, beta_1, alpha_2, beta_2, ... MO ordering
     ncas = mc.ncas
     nocca, noccb = mc.nelecas
     if nocca != noccb:
         raise NotImplementedError(
-            "Amplitude conversion only implemented " "for closed-shell active space."
+            "Amplitude conversion only implemented for closed-shell active space."
         )
     nvirta = mc.ncas - nocca
     nvirtb = mc.ncas - noccb
@@ -100,33 +118,66 @@ def extract_ci_amplitudes(mc: mcscf.casci.CASCI, exci=2):
     return ret
 
 
-def extract_from_dict(overlaps, ncas, nocca, noccb, exci=2):
+def extract_from_dict(
+    amplitudes: Dict[str, npt.NDArray], ncas: int, nocca: int, noccb: int, exci: int = 2
+) -> Dict[str, npt.NDArray]:
+    """Maps CI amplitudes contained in a dictionary to the correct shape
+    and changes their sign convention from true vacuum to Fermi vacuum.
+
+    Parameters
+    ----------
+    amplitudes : Dict[str, npt.NDArray]
+        dictionary with spin block labels (alpha -> `"a"`, alpha/beta -> `"ab"`) as keys
+        and CI amplitudes as values. The values need to be flat arrays, and the values
+        are expected to be sorted according to the bit strings
+        provided by :py:func:`tailoredcc.amplitudes.determinant_strings`.
+    ncas : int
+        number of active orbitals
+    nocca : int
+        number of active alpha electrons
+    noccb : int
+        number of active beta electrons
+    exci : int, optional
+        maximum excitation level, by default 2
+
+    Returns
+    -------
+    Dict[str, npt.NDArray]
+        dictionary with spin block labels
+        (alpha -> `"a"`, alpha/beta -> `"ab"`)
+        as keys and CI amplitudes as values.
+        The axes of the amplitudes are sorted by occupied/virtual and
+        alpha/beta, i.e., the `"ab"` block axes are occ-alpha, occ-beta,
+        virt-alpha, virt-beta.
+    """
     if exci > 2:
-        raise NotImplementedError("Dictionary input only implemented " "up to double excitations.")
+        raise NotImplementedError("Dictionary input only implemented up to double excitations.")
+    assert nocca == noccb
     nvirta = ncas - nocca
     nvirtb = ncas - noccb
     # sign changes (true vacuum -> Fermi vacuum)
     _, t1signs = tn_addrs_signs(ncas, nocca, 1)
     _, t2signs = tn_addrs_signs(ncas, nocca, 2)
 
-    cis_a = overlaps["a"] * t1signs
-    cis_b = overlaps["b"] * t1signs
+    cis_a = amplitudes["a"] * t1signs
+    cis_b = amplitudes["b"] * t1signs
     cis_a = cis_a.reshape(nocca, nvirta)
     cis_b = cis_b.reshape(noccb, nvirtb)
 
-    cid_ab = overlaps["ab"].reshape(nocca * nvirta, noccb * nvirtb)
+    cid_ab = amplitudes["ab"].reshape(nocca * nvirta, noccb * nvirtb)
     cid_ab = np.einsum("ij,i,j->ij", cid_ab, t1signs, t1signs)
     cid_ab = cid_ab.reshape(nocca, nvirta, noccb, nvirtb).transpose(0, 2, 1, 3)
 
-    cid_aa = overlaps["aa"] * t2signs
-    cid_bb = overlaps["bb"] * t2signs
+    cid_aa = amplitudes["aa"] * t2signs
+    cid_bb = amplitudes["bb"] * t2signs
 
-    c0 = overlaps["0"]
+    c0 = amplitudes["0"]
     ret = {"0": c0, "a": cis_a, "b": cis_b, "aa": cid_aa, "bb": cid_bb, "ab": cid_ab}
     return ret
 
 
 def extract_vqe_singles_doubles_amplitudes(vqe: cov.vqe.ActiveSpaceChemistryVQE):
+    # TODO: REMOVE
     if not hasattr(vqe, "compute_vqe_basis_state_overlaps"):
         raise NotImplementedError(
             "This VQE cannot compute overlap with computational basis states."
@@ -479,56 +530,6 @@ def determinant_strings(ncas, nocc, level=4):
     return ret
 
 
-def detstrings_singles(nocc: int, nvirt: int):
-    # TODO: docs
-    if nocc <= 0:
-        raise ValueError("Cannot build determinant with 0 occupied orbitals.")
-    if nvirt <= 0:
-        raise ValueError("Cannot build determinant with 0 virtual orbitals.")
-    ncas = nocc + nvirt
-    detstrings = []
-    detstrings_np = []
-    for i in range(nocc):
-        for a in range(nvirt):
-            string = np.zeros(ncas, dtype=int)
-            string[:nocc] = 1
-            string[i] = 0
-            string[nocc + a] = 1
-            detstrings_np.append(string)
-            without_zeros = np.trim_zeros(string[::-1], "f")
-            cstr = "".join([str(x) for x in without_zeros])
-            cstr = "0b" + cstr
-            detstrings.append(cstr)
-    return detstrings, detstrings_np
-
-
-def detstrings_doubles(nocc: int, nvirt: int):
-    # TODO: docs
-    if nocc <= 0:
-        raise ValueError("Cannot build determinant with 0 occupied orbitals.")
-    if nvirt <= 0:
-        raise ValueError("Cannot build determinant with 0 virtual orbitals.")
-    ncas = nocc + nvirt
-    detstrings = []
-    detstrings_np = []
-    for j in range(nocc):
-        for i in range(j):
-            for b in range(nvirt):
-                for a in range(b):
-                    string = np.zeros(ncas, dtype=int)
-                    string[:nocc] = 1
-                    string[j] = 0
-                    string[i] = 0
-                    string[nocc + b] = 1
-                    string[nocc + a] = 1
-                    detstrings_np.append(string)
-                    without_zeros = np.trim_zeros(string[::-1], "f")
-                    cstr = "".join([str(x) for x in without_zeros])
-                    cstr = "0b" + cstr
-                    detstrings.append(cstr)
-    return detstrings, detstrings_np
-
-
 def assert_spinorb_antisymmetric(t2: npt.NDArray):
     if t2.ndim != 4:
         raise ValueError(f"Tensor must have 4 dimensions, got {t2.ndim}.")
@@ -625,7 +626,26 @@ def number_nonredundant_amplitudes(nmo, nocc, exci):
     return ret
 
 
-def number_overlaps_tccsd(nmo, nalpha, nbeta):
+def number_overlaps_tccsd(nmo: int, nalpha: int, nbeta: int) -> int:
+    """Number of amplitudes/overlaps that need
+    to be extracted from a state for TCCSD, i.e.,
+    these include the ref. det., all alpha/beta single
+    excitations, and double excitations.
+
+    Parameters
+    ----------
+    nmo : int
+        number of spatial active orbitals
+    nalpha : int
+        number of active alpha electrons
+    nbeta : int
+        number of active beta electrons
+
+    Returns
+    -------
+    int
+        number of required amplitudes
+    """
     nvirta = nmo - nalpha
     nvirtb = nmo - nbeta
     singles = number_nonredundant_amplitudes(nmo, nalpha, 1) + number_nonredundant_amplitudes(
@@ -638,7 +658,26 @@ def number_overlaps_tccsd(nmo, nalpha, nbeta):
     return ret
 
 
-def number_overlaps_eccc(nmo, nalpha, nbeta):
+def number_overlaps_eccc(nmo: int, nalpha: int, nbeta: int) -> int:
+    """Number of amplitudes/overlaps that need
+    to be extracted from a state for ec-CC, i.e.,
+    these include the ref. det., and all non-redundant
+    excitation amplitudes up to quadruple excitations.
+
+    Parameters
+    ----------
+    nmo : int
+        number of spatial active orbitals
+    nalpha : int
+        number of active alpha electrons
+    nbeta : int
+        number of active beta electrons
+
+    Returns
+    -------
+    int
+        number of required amplitudes
+    """
     nvirta = nmo - nalpha
     nvirtb = nmo - nbeta
     ret = number_overlaps_tccsd(nmo, nalpha, nbeta)

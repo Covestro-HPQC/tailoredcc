@@ -8,7 +8,6 @@ from shutil import which
 
 import numpy as np
 import pytest
-from pyscf.ci.cisd import tn_addrs_signs
 from pyscf.fci import cistring
 from tqdm import tqdm
 
@@ -19,8 +18,6 @@ from tailoredcc.amplitudes import (
     check_amplitudes_spinorb,
     ci_to_cluster_amplitudes,
     compute_parity,
-    detstrings_doubles,
-    detstrings_singles,
     extract_ci_amplitudes,
     number_overlaps_eccc,
     remove_index_restriction_doubles,
@@ -29,44 +26,6 @@ from tailoredcc.amplitudes import (
 )
 from tailoredcc.ci_to_cc import ci_to_cc
 from tailoredcc.clusterdec import dump_clusterdec, run_clusterdec
-
-
-@pytest.mark.parametrize(
-    "nocc, ncas",
-    [
-        (0, 1),
-        (1, 0),
-        (1, 1),
-        (1, 2),
-        (2, 2),
-        (2, 4),
-        (4, 4),
-        (2, 6),
-        (4, 6),
-        (7, 10),
-        (10, 25),
-    ],
-)
-def test_determinant_string_generation(nocc, ncas):
-    nvirt = ncas - nocc
-    t1addrs, _ = tn_addrs_signs(ncas, nocc, 1)
-    t2addrs, _ = tn_addrs_signs(ncas, nocc, 2)
-
-    if nocc == 0 or ncas == 1:
-        assert len(t1addrs) == 0
-        assert len(t2addrs) == 0
-
-    if len(t1addrs):
-        detstrings_ref = [bin(ds) for ds in cistring.addrs2str(ncas, nocc, t1addrs.ravel())]
-        detstrings, detstrings_np = detstrings_singles(nocc, nvirt)
-        assert detstrings == detstrings_ref
-        assert np.sum(detstrings_np) == nocc * len(detstrings)
-
-    if len(t2addrs):
-        detstrings_ref = [bin(ds) for ds in cistring.addrs2str(ncas, nocc, t2addrs.ravel())]
-        detstrings, detstrings_np = detstrings_doubles(nocc, nvirt)
-        assert detstrings == detstrings_ref
-        assert np.sum(detstrings_np) == nocc * len(detstrings)
 
 
 @pytest.fixture(scope="module")
@@ -109,7 +68,7 @@ def scf_ci():
     return m, mc, mc2
 
 
-def test_determinant_strings_new(scf_ci):
+def test_determinant_strings(scf_ci):
     from tailoredcc.amplitudes import (
         determinant_strings,
         extract_ci_amplitudes,
