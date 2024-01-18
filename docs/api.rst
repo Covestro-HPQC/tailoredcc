@@ -1,7 +1,6 @@
 API Documentation
 =================
 
-.. autosummary::
-   :toctree: autosummary
-
-   tailoredcc.canvas
+.. automodapi:: tailoredcc.amplitudes
+   :no-inheritance-diagram:
+   :no-heading:

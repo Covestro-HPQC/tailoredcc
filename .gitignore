@@ -112,3 +112,4 @@ ENV/
 *.npy
 tmp*
 *.py,cover
+.vscode
