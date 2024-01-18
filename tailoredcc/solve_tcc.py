@@ -78,16 +78,3 @@ def solve_tccsd_oe(
     else:
         print("Did not converge.")
         return new_singles, new_doubles
-
-
-def zero_slices(singles_res, doubles_res, occslice, virtslice):
-    singles = singles_res.to_ndarray()
-    doubles = doubles_res.to_ndarray()
-    t1slice = np.ix_(occslice, virtslice)
-    t2slice = np.ix_(occslice, occslice, virtslice, virtslice)
-
-    singles[t1slice] = 0.0
-    doubles[t2slice] = 0.0
-
-    singles_res.set_from_ndarray(singles, 1e-12)
-    doubles_res.set_from_ndarray(doubles, 1e-12)
