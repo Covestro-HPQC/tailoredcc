@@ -1,0 +1,10 @@
+.benchmarks
+*.png
+*.npz
+*.pdf
+*.h5
+*.txt
+*.tex
+*.csv
+*.json
+*.chk

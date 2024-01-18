@@ -3,10 +3,8 @@
 
 import warnings
 from dataclasses import dataclass
-from functools import partial
 from typing import Any, Callable, Dict
 
-import covvqetools as cov
 import numpy as np
 import numpy.typing as npt
 from pyscf import mcscf, scf
@@ -15,20 +13,18 @@ from pyscf.cc.addons import spatial2spin
 from tailoredcc.ci_to_cc import ci_to_cc
 
 from .amplitudes import (
-    add_gaussian_noise,
     amplitudes_to_spinorb,
     assert_spinorb_antisymmetric,
     ci_to_cluster_amplitudes,
     extract_ci_amplitudes,
-    extract_vqe_singles_doubles_amplitudes,
     prepare_cas_slices,
     set_cas_amplitudes_spatial_from_spinorb,
 )
-from .solve_tcc import _solve_tccsd_oe, solve_tccsd
-from .utils import spin_blocks_interleaved_to_sequential, spinorb_from_spatial
+from .solve_tcc import solve_tccsd_oe
+from .utils import spinorb_from_spatial
 
 
-def tccsd_from_ci(mc: mcscf.casci.CASCI, backend="pyscf", gaussian_noise=None, **kwargs) -> Any:
+def tccsd_from_ci(mc: mcscf.casci.CASCI, backend="pyscf", **kwargs) -> Any:
     # TODO: docs
     nocca, noccb = mc.nelecas
     assert nocca == noccb
@@ -41,8 +37,6 @@ def tccsd_from_ci(mc: mcscf.casci.CASCI, backend="pyscf", gaussian_noise=None, *
     nvir = mc.mo_coeff.shape[1] - ncore - ncas
 
     ci_amps = extract_ci_amplitudes(mc, exci=2)
-    if gaussian_noise is not None:
-        ci_amps = add_gaussian_noise(ci_amps, std=gaussian_noise)
     c_ia, c_ijab = amplitudes_to_spinorb(ci_amps)
 
     occslice, virtslice = prepare_cas_slices(nocca, noccb, nvirta, nvirtb, ncore, nvir, backend)
@@ -53,45 +47,12 @@ def tccsd_from_fqe(
     scfres: scf.hf.SCF,
     wfn,
     backend="pyscf",
-    gaussian_noise=None,
     **kwargs,
 ):
     from .utils import fqe_to_fake_ci
 
     mc = fqe_to_fake_ci(wfn, scfres, sz=0)
-    return tccsd_from_ci(mc, backend=backend, gaussian_noise=gaussian_noise, **kwargs)
-
-
-def tccsd_from_vqe(
-    scfres: scf.hf.SCF,
-    vqe: cov.vqe.ActiveSpaceChemistryVQE,
-    backend="pyscf",
-    gaussian_noise=None,
-    **kwargs,
-):
-    # TODO: docs, type hints
-    nocca, noccb = vqe.nalpha, vqe.nbeta
-    assert nocca == noccb
-    ncas = vqe.nact
-    nvirta = ncas - nocca
-    nvirtb = ncas - noccb
-    assert nvirta == nvirtb
-    ncore = vqe.nocc
-    if ncore == 0 and (nocca + noccb) != sum(scfres.mol.nelec):
-        raise ValueError("The active space needs to contain all electrons if ncore=0.")
-    ncas = vqe.nact
-    nvir = scfres.mo_coeff.shape[1] - ncore - ncas
-
-    ci_amps = extract_vqe_singles_doubles_amplitudes(vqe)
-    if gaussian_noise is not None:
-        ci_amps = add_gaussian_noise(ci_amps, std=gaussian_noise)
-    c_ia, c_ijab = amplitudes_to_spinorb(ci_amps)
-
-    c_ia = c_ia.real
-    c_ijab = c_ijab.real
-
-    occslice, virtslice = prepare_cas_slices(nocca, noccb, nvirta, nvirtb, ncore, nvir, backend)
-    return _tccsd_map[backend](scfres, c_ia, c_ijab, occslice, virtslice, **kwargs)
+    return tccsd_from_ci(mc, backend=backend, **kwargs)
 
 
 def tccsd_pyscf(
@@ -209,75 +170,6 @@ class TCC:
         return self.e_hf + self.e_corr
 
 
-def tccsd(
-    scfres: scf.hf.SCF,
-    c_ia: npt.NDArray,
-    c_ijab: npt.NDArray,
-    occslice: npt.NDArray,
-    virtslice: npt.NDArray,
-    backend="libcc",
-    **kwargs,
-):
-    mo_coeff = kwargs.pop("mo_coeff", None)
-    if mo_coeff is not None:
-        raise NotImplementedError("Custom orbitals for adcc not implemented.")
-    warnings.warn("TCC CAS energy using adcc is sometimes wrong if based on VQE.")
-    # 1. convert to T amplitudes
-    t1, t2 = ci_to_cluster_amplitudes(c_ia, c_ijab)
-    t1 = spin_blocks_interleaved_to_sequential(t1)
-    t2 = spin_blocks_interleaved_to_sequential(t2)
-    print("=> Amplitudes converted.")
-    # assert_spinorb_antisymmetric(t2)
-
-    mol = scfres.mol
-    nocc = sum(mol.nelec)
-    nvirt = 2 * mol.nao_nr() - nocc
-
-    import adcc
-
-    from .ccsd import DISPATCH
-
-    cc = DISPATCH[backend]
-
-    hf = adcc.ReferenceState(scfres)
-    hf_energy = hf.energy_scf
-    mp = adcc.LazyMp(hf)
-    print("=> Prerequisites built.")
-
-    # 2. map T amplitudes to full MO space
-    t1_mo = np.zeros((nocc, nvirt))
-    t2_mo = np.zeros((nocc, nocc, nvirt, nvirt))
-
-    t1slice = np.ix_(occslice, virtslice)
-    t2slice = np.ix_(occslice, occslice, virtslice, virtslice)
-    t1_mo[t1slice] = t1
-    t2_mo[t2slice] = t2
-    print("=> T amplitudes mapped to full MO space.")
-
-    # assert_spinorb_antisymmetric(t2_mo)
-
-    tguess = adcc.AmplitudeVector(ov=hf.fov.zeros_like(), oovv=mp.t2oo.zeros_like())
-    tguess.ov.set_from_ndarray(t1_mo, 1e-12)
-    tguess.oovv.set_from_ndarray(t2_mo, 1e-12)
-
-    e_cas = cc.ccsd_energy_correlation(mp, tguess)
-    print(f"CCSD correlation energy from CI amplitudes {e_cas:>12}")
-
-    # solve tccsd amplitude equations
-    t = solve_tccsd(mp, occslice, virtslice, tguess, backend=backend, diis_size=8)
-    t1f = t.ov
-    t2f = t.oovv
-    # test that the T_CAS amplitudes are still intact
-    np.testing.assert_allclose(t1, t1f.to_ndarray()[t1slice], atol=1e-12, rtol=0)
-    np.testing.assert_allclose(t2, t2f.to_ndarray()[t2slice], atol=1e-12, rtol=0)
-
-    # compute correlation/total TCCSD energy
-    e_tcc = cc.ccsd_energy_correlation(mp, t)
-
-    ret = TCC(scfres, t1f, t2f, hf_energy, e_cas, e_tcc)
-    return ret
-
-
 def compute_integrals_custom(pyscf_molecule, pyscf_scf, mo_coeff):
     """
     Compute the 1-electron and 2-electron integrals.
@@ -385,7 +277,7 @@ def tccsd_opt_einsum(
 
     assert_spinorb_antisymmetric(t2_mo)
 
-    from .ccsd import oe as cc
+    from .ccsd import equations_oe as cc
 
     e_cas = cc.ccsd_energy_correlation(
         t1_mo.T, t2_mo.transpose(2, 3, 0, 1), fock, eri_phys_asymm, o, v
@@ -393,7 +285,7 @@ def tccsd_opt_einsum(
     print(f"CCSD correlation energy from CI amplitudes {e_cas:>12}")
 
     # solve tccsd amplitude equations
-    t1f, t2f = _solve_tccsd_oe(
+    t1f, t2f = solve_tccsd_oe(
         t1_mo.T,
         t2_mo.transpose(2, 3, 0, 1),
         fock,
@@ -454,8 +346,6 @@ def ec_cc_from_ci(mc: mcscf.casci.CASCI, **kwargs):
     nvir = mc.mo_coeff.shape[1] - ncore - ncas
 
     ci_amps = extract_ci_amplitudes(mc, exci=4)
-    # if gaussian_noise is not None:
-    #     ci_amps = add_gaussian_noise(ci_amps, std=gaussian_noise)
     ci_amps_spinorb = amplitudes_to_spinorb(ci_amps, exci=4)
 
     # if not np.allclose(mc._scf.mo_coeff, mc.mo_coeff, atol=1e-8, rtol=0):
@@ -669,8 +559,6 @@ def ec_cc(
 
 
 _tccsd_map: Dict[str, Callable] = {
-    "adcc": partial(tccsd, backend="adcc"),
-    "libcc": partial(tccsd, backend="libcc"),
     "oe": tccsd_opt_einsum,
     "pyscf": tccsd_pyscf,
 }
