@@ -8,10 +8,10 @@ dependencies:
   - python =3.9
   - pip
   # parsec build deps
-  - cxx-compiler
-  - make
-  - openblas
-  - pybind11
+  # - cxx-compiler
+  # - make
+  # - openblas
+  # - pybind11
   # Run
   - numpy <1.24
   - scipy >=1.2,<1.11
@@ -21,7 +21,6 @@ dependencies:
   - openfermionpyscf
   - jax
   - fqe
-  - pathos
   # Tests
   - pytest
   - pytest-cov
