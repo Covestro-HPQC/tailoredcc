@@ -1,12 +1,12 @@
 [build-system]
-requires = ["setuptools>=61.0", "versioningit~=2.0"]
+requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 # Self-descriptive entries which should always be present
 # https://packaging.python.org/en/latest/specifications/declaring-project-metadata/
 [project]
 name = "tailoredcc"
-description = "Tailored Coupled Cluster Code"
+description = "Tailored and Externally Corrected Coupled Cluster Code"
 dynamic = ["version"]
 readme = "README.md"
 authors = [
@@ -17,17 +17,16 @@ license = { text = "Not Open Source" }
 classifiers = [
     "Programming Language :: Python :: 3",
 ]
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 # Declare any run-time dependencies that should be installed with the package.
 dependencies = [
-    "numpy <1.24",
+    "numpy",
     "scipy",
     "pyscf",
     "openfermion",
     "openfermionpyscf",
     "opt_einsum",
     "jax",
-    "covvqetools @ git+ssh://git@gitlab.ssh.covestro.com/quantum-computing/covvqetools@master",
 ]
 
 # Update the urls once the hosting is set up.
@@ -73,23 +72,18 @@ tailoredcc = [
     "py.typed"
 ]
 
-[tool.versioningit]
-default-version = "1+unknown"
+[tool.bumpversion]
+current_version = "0.0.2"
+commit = true
+tag = true
+tag_name = "v{new_version}"
+allow_dirty = true
 
-[tool.versioningit.format]
-distance = "{base_version}+{distance}.{vcs}{rev}"
-dirty = "{base_version}+{distance}.{vcs}{rev}.dirty"
-distance-dirty = "{base_version}+{distance}.{vcs}{rev}.dirty"
+[[tool.bumpversion.files]]
+filename = "tailoredcc/__init__.py"
 
-[tool.versioningit.vcs]
-# The method key:
-method = "git"  # <- The method name
-# Parameters to pass to the method:
-match = ["*"]
-default-tag = "1.0.0"
-
-[tool.versioningit.write]
-file = "tailoredcc/_version.py"
+[tool.setuptools.dynamic]
+version = {attr = "tailoredcc.__version__"}
 
 # https://beta.ruff.rs/docs/configuration/#using-pyprojecttoml
 [tool.ruff]

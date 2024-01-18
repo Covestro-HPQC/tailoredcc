@@ -11,14 +11,8 @@ test:
     - micromamba config list
     - micromamba env create -f conda_env.yml
     - micromamba activate gitlab-ci
-    # manually install pkgs from COV quantum computing software stack
-    - pip install git+https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.covestro.com/quantum-computing/covvqetools -v
-    # NOTE: parsec needs OpenBLAS, but adcc & friends need MKL
-    - export OPENBLAS_LIB=${CONDA_PREFIX}/lib/libopenblas.so
-    - pip install git+https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.covestro.com/quantum-computing/parsec -v
     # install pkg
     - pip install -e . -v --no-deps
-    # run pytest (NOTE without VQE for now because parsec is missing)
     - export OMP_NUM_THREADS=1
     - pytest tailoredcc -v --cov tailoredcc --cov-report term --cov-report xml:coverage.xml --junitxml=report.xml
   coverage: '/(?i)total.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/'

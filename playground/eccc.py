@@ -2,10 +2,10 @@
 # Covestro Deutschland AG, 2023
 
 # %%
-from pyscf import gto, scf, mcscf, cc
-from tailoredcc.amplitudes import extract_ci_amplitudes
-from tailoredcc.amplitudes import amplitudes_to_spinorb
+from pyscf import cc, gto, mcscf, scf
+
 from tailoredcc import ec_cc_from_ci
+from tailoredcc.amplitudes import amplitudes_to_spinorb, extract_ci_amplitudes
 
 # mol = gto.M(atom="Be 0 0 0; Be 0 0 2.4", basis="cc-pvqz")
 # mol = gto.M(atom="Be 0 0 0; Be 0 0 2.4", basis="sto-3g")
@@ -32,8 +32,8 @@ c1, c2, c3, c4 = amplitudes_to_spinorb(ci_amps, exci=4)
 # t1, t2, t3, t4 = ci_to_cc(c1, c2, c3, c4)
 # %%
 
-from tailoredcc.tailoredcc import ec_cc
 from tailoredcc.amplitudes import prepare_cas_slices
+from tailoredcc.tailoredcc import ec_cc
 
 nocca, noccb = mc.nelecas
 nvirta = mc.ncas - nocca
