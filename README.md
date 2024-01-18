@@ -1,12 +1,6 @@
 TailoredCC
 ==============================
-Tailored Coupled Cluster Code
-
-### Copyright
-
-Copyright (c) 2023, Covestro Deutschland AG
-
-Contact: Maximilian Scheurer (`maximilian.scheurer@covestro.com`)
+Tailored and Externally Corrected Coupled Cluster Code
 
 
 #### Acknowledgements
