@@ -6,7 +6,6 @@ from itertools import combinations_with_replacement, permutations, product
 from math import factorial
 from typing import Dict, Tuple, Union
 
-import covvqetools as cov
 import numpy as np
 import numpy.typing as npt
 from pyscf import mcscf
@@ -173,48 +172,6 @@ def extract_from_dict(
     c0 = amplitudes["0"]
     ret = {"0": c0, "a": cis_a, "b": cis_b, "aa": cid_aa, "bb": cid_bb, "ab": cid_ab}
     return ret
-
-
-def extract_vqe_singles_doubles_amplitudes(vqe: cov.vqe.ActiveSpaceChemistryVQE):
-    # TODO: REMOVE
-    if not hasattr(vqe, "compute_vqe_basis_state_overlaps"):
-        raise NotImplementedError(
-            "This VQE cannot compute overlap with computational basis states."
-        )
-    ncas = vqe.nact
-    nocca, noccb = vqe.nalpha, vqe.nbeta
-    if nocca != noccb:
-        raise NotImplementedError(
-            "Amplitude conversion only implemented for closed-shell active space."
-        )
-    nvirta = ncas - nocca
-    nvirtb = ncas - noccb
-    assert nvirta == nvirtb
-
-    dets_tccsd = determinant_strings(ncas, nocca, level=2)
-
-    def interleave_bits(int1, int2):
-        max_length = max(int1.bit_length(), int2.bit_length())
-        result = 0
-        for i in range(max_length):
-            bit1 = (int1 >> i) & 1
-            bit2 = (int2 >> i) & 1
-            result |= (bit2 << (2 * i + 1)) | (bit1 << (2 * i))
-        return result
-
-    overlaps = {}
-    for key, dets in dets_tccsd.items():
-        ret = []
-        for d in dets:
-            id = interleave_bits(int(d[0], 2), int(d[1], 2))
-            detstring = bin(id)[2:][::-1]
-            diff = 2 * ncas - len(detstring)
-            if diff > 0:
-                detstring += diff * "0"
-            overlap = vqe.compute_vqe_basis_state_overlaps([detstring], vqe.params)[0]
-            ret.append(overlap)
-        overlaps[key] = np.asarray(ret)
-    return extract_from_dict(overlaps, ncas, nocca, noccb)
 
 
 def remove_index_restriction_doubles(cid_aa: npt.NDArray, nocc: int, nvirt: int):
@@ -485,16 +442,6 @@ def check_amplitudes_spinorb(tt, exci=2, check_spin_forbidden_blocks=True):
                 viewslice = tuple(slices[ii] for ii in ostr + vstr)
                 view = tt[viewslice]
                 np.testing.assert_allclose(view, np.zeros_like(view), atol=1e-14, rtol=0)
-
-
-# def add_gaussian_noise(
-#     ci_amps: dict,
-#     std: float = 1e-12,
-# ):
-#     noise = partial(np.random.normal, loc=0.0, scale=std)
-#     ci_amps_np = {k: np.atleast_1d(v) for k, v in ci_amps.items()}
-#     ret = {k: x + noise(size=x.shape) for k, x in ci_amps_np.items()}
-#     return ret
 
 
 def ci_to_cluster_amplitudes(c_ia: npt.NDArray, c_ijab: npt.NDArray):

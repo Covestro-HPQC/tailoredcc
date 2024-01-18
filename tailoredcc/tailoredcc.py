@@ -5,7 +5,6 @@ import warnings
 from dataclasses import dataclass
 from typing import Any, Callable, Dict
 
-import covvqetools as cov
 import numpy as np
 import numpy.typing as npt
 from pyscf import mcscf, scf
@@ -18,7 +17,6 @@ from .amplitudes import (
     assert_spinorb_antisymmetric,
     ci_to_cluster_amplitudes,
     extract_ci_amplitudes,
-    extract_vqe_singles_doubles_amplitudes,
     prepare_cas_slices,
     set_cas_amplitudes_spatial_from_spinorb,
 )
@@ -55,35 +53,6 @@ def tccsd_from_fqe(
 
     mc = fqe_to_fake_ci(wfn, scfres, sz=0)
     return tccsd_from_ci(mc, backend=backend, **kwargs)
-
-
-def tccsd_from_vqe(
-    scfres: scf.hf.SCF,
-    vqe: cov.vqe.ActiveSpaceChemistryVQE,
-    backend="pyscf",
-    **kwargs,
-):
-    # TODO: docs, type hints
-    nocca, noccb = vqe.nalpha, vqe.nbeta
-    assert nocca == noccb
-    ncas = vqe.nact
-    nvirta = ncas - nocca
-    nvirtb = ncas - noccb
-    assert nvirta == nvirtb
-    ncore = vqe.nocc
-    if ncore == 0 and (nocca + noccb) != sum(scfres.mol.nelec):
-        raise ValueError("The active space needs to contain all electrons if ncore=0.")
-    ncas = vqe.nact
-    nvir = scfres.mo_coeff.shape[1] - ncore - ncas
-
-    ci_amps = extract_vqe_singles_doubles_amplitudes(vqe)
-    c_ia, c_ijab = amplitudes_to_spinorb(ci_amps)
-
-    c_ia = c_ia.real
-    c_ijab = c_ijab.real
-
-    occslice, virtslice = prepare_cas_slices(nocca, noccb, nvirta, nvirtb, ncore, nvir, backend)
-    return _tccsd_map[backend](scfres, c_ia, c_ijab, occslice, virtslice, **kwargs)
 
 
 def tccsd_pyscf(
