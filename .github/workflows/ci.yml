@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test With Conda
+    runs-on: "ubuntu-latest"
+    defaults:
+      run:
+        shell: bash -l {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          python-version: 3.11
+          mamba-version: "*"
+          channel-priority: true
+          channels: conda-forge,nodefaults
+          activate-environment: gitlab-ci
+          environment-file: conda_env.yml
+      - name: Linting
+        run: |
+          isort -c tailoredcc
+          ruff tailoredcc
+          mypy tailoredcc
+      - name: Install clusterdec
+        run: |
+          git clone https://github.com/susilehtola/clusterdec /tmp/clusterdec
+          cd /tmp/clusterdec/source && make
+          echo "/tmp/clusterdec/source" >> $GITHUB_PATH
+      - name: Install package
+        run: pip install -e . -v --no-deps
+      - name: PyTest
+        run: |
+          export OMP_NUM_THREADS=1
+          pytest tailoredcc -v --cov tailoredcc --cov-report term
+          
