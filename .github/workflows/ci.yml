@@ -24,6 +24,7 @@ jobs:
           python-version: 3.11
           mamba-version: "*"
           channel-priority: true
+          channels: conda-forge
           activate-environment: gitlab-ci
           environment-file: conda_env.yml
       - name: Install clusterdec
