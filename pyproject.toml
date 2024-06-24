@@ -1,0 +1,105 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+# Self-descriptive entries which should always be present
+# https://packaging.python.org/en/latest/specifications/declaring-project-metadata/
+[project]
+name = "tailoredcc"
+description = "Tailored and Externally Corrected Coupled Cluster Code"
+dynamic = ["version"]
+readme = "README.md"
+authors = [
+    { name = "Covestro Deutschland AG", email = "quantum.computing@covestro.com" }
+]
+license = { file = "LICENSE" }
+# See https://pypi.org/classifiers/
+classifiers = [
+    "Programming Language :: Python :: 3",
+]
+requires-python = ">=3.9"
+# Declare any run-time dependencies that should be installed with the package.
+dependencies = [
+    "numpy",
+    "scipy",
+    "pyscf",
+    "openfermion",
+    "openfermionpyscf",
+    "opt_einsum",
+    "jax",
+]
+
+# Update the urls once the hosting is set up.
+#[project.urls]
+#"Source" = "https://github.com/<username>/tailoredcc/"
+#"Documentation" = "https://tailoredcc.readthedocs.io/"
+
+[project.optional-dependencies]
+test = [
+  "pytest>=6.1.2",
+  "pytest-runner",
+  "mypy",
+]
+
+[tool.setuptools]
+# This subkey is a beta stage development and keys may change in the future, see https://setuptools.pypa.io/en/latest/userguide/pyproject_config.html for more details
+#
+# As of version 0.971, mypy does not support type checking of installed zipped
+# packages (because it does not actually import the Python packages).
+# We declare the package not-zip-safe so that our type hints are also available
+# when checking client code that uses our (installed) package.
+# Ref:
+# https://mypy.readthedocs.io/en/stable/installed_packages.html?highlight=zip#using-installed-packages-with-mypy-pep-561
+zip-safe = false
+# Let setuptools discover the package in the current directory,
+# but be explicit about non-Python files.
+# See also:
+#   https://setuptools.pypa.io/en/latest/userguide/pyproject_config.html#setuptools-specific-configuration
+# Note that behavior is currently evolving with respect to how to interpret the
+# "data" and "tests" subdirectories. As of setuptools 63, both are automatically
+# included if namespaces is true (default), even if the package is named explicitly
+# (instead of using 'find'). With 'find', the 'tests' subpackage is discovered
+# recursively because of its __init__.py file, but the data subdirectory is excluded
+# with include-package-data = false and namespaces = false.
+include-package-data = false
+[tool.setuptools.packages.find]
+namespaces = false
+where = ["."]
+
+# Ref https://setuptools.pypa.io/en/latest/userguide/datafiles.html#package-data
+[tool.setuptools.package-data]
+tailoredcc = [
+    "py.typed"
+]
+
+[tool.bumpversion]
+current_version = "0.0.2"
+commit = true
+tag = true
+tag_name = "v{new_version}"
+allow_dirty = true
+
+[[tool.bumpversion.files]]
+filename = "tailoredcc/__init__.py"
+
+[tool.setuptools.dynamic]
+version = {attr = "tailoredcc.__version__"}
+
+# https://beta.ruff.rs/docs/configuration/#using-pyprojecttoml
+[tool.ruff]
+line-length = 100
+ignore = ["E741", "E402"]
+
+[tool.black]
+line-length = 100
+
+[tool.isort]
+profile = "black"
+
+[tool.coverage.run]
+branch = true
+
+[tool.coverage.report]
+omit = [
+    "*/test_*.py",
+    ]

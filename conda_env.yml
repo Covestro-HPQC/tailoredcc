@@ -1,0 +1,25 @@
+name: gitlab-ci
+channels:
+  - conda-forge
+dependencies:
+  # Build
+  - git
+  - openssh
+  - python =3.9
+  - pip
+  # Run
+  - numpy
+  - scipy >=1.2,<1.11
+  - opt_einsum >=3.0
+  - pyscf
+  - openfermion
+  - openfermionpyscf
+  - jax
+  - fqe
+  # Tests
+  - pytest
+  - pytest-cov
+  - pyinstrument
+  # ClusterDec
+  - make
+  - cxx-compiler
