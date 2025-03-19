@@ -34,7 +34,7 @@ jobs:
       - name: Linting
         run: |
           isort -c tailoredcc
-          ruff tailoredcc
+          ruff check tailoredcc
           mypy tailoredcc
       - name: Install clusterdec
         run: |
