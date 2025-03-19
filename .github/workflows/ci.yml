@@ -34,7 +34,7 @@ jobs:
       - name: Linting
         run: |
           isort -c tailoredcc
-          ruff tailoredcc
+          ruff check tailoredcc
           mypy tailoredcc
       - name: Install clusterdec
         run: |
@@ -46,5 +46,6 @@ jobs:
       - name: PyTest
         run: |
           export OMP_NUM_THREADS=1
+          echo "Running tests..."
           pytest tailoredcc -v --cov tailoredcc --cov-report term
           
